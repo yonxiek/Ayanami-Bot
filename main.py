@@ -74,6 +74,7 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"Синхронизировано {len(synced)} слэш-команд.")
+        print(f"Префиксных команд: {len(bot.commands)}")
     except Exception as e:
         print(f"Ошибка синхронизации команд: {e}")
         traceback.print_exc()
@@ -149,6 +150,72 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
             color=main_color,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.event
+async def on_command_error(ctx: commands.Context, error: commands.CommandError):
+    if isinstance(error, commands.CommandNotFound):
+        return
+
+    main_color = discord.Color(0x2b2d31)
+
+    if isinstance(error, commands.MissingRequiredArgument):
+        embed = discord.Embed(
+            title="❌ Не хватает аргументов",
+            description=f"Вы не указали: **`{error.param.name}`**",
+            color=main_color,
+        )
+        embed.add_field(name="Использование", value=f"`{ctx.clean_prefix}{ctx.command.name} {ctx.command.signature}`", inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    if isinstance(error, commands.BadArgument):
+        embed = discord.Embed(
+            title="❌ Неверный аргумент",
+            description=str(error),
+            color=main_color,
+        )
+        embed.add_field(name="Использование", value=f"`{ctx.clean_prefix}{ctx.command.name} {ctx.command.signature}`", inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    if isinstance(error, commands.MissingPermissions):
+        perms = ", ".join(error.missing_permissions or [])
+        embed = discord.Embed(
+            title="⛔ Доступ запрещен",
+            description=f"**{ctx.author.name}**, у вас не хватает прав: `{perms}`",
+            color=main_color,
+        )
+        await ctx.send(embed=embed)
+        return
+
+    if isinstance(error, commands.BotMissingPermissions):
+        perms = ", ".join(error.missing_permissions or [])
+        embed = discord.Embed(
+            title="⛔ Мне не хватает прав",
+            description=f"Для этой команды боту нужны права: `{perms}`",
+            color=main_color,
+        )
+        await ctx.send(embed=embed)
+        return
+
+    if isinstance(error, commands.CommandOnCooldown):
+        unix_time = int((datetime.now(timezone.utc) + timedelta(seconds=error.retry_after)).timestamp())
+        embed = discord.Embed(
+            title="⌛ Перезарядка",
+            description=f"**{ctx.author.name}**, команда еще не готова!",
+            color=main_color,
+        )
+        embed.add_field(name="Попробуйте снова:", value=f"<t:{unix_time}:R>", inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    if isinstance(error, commands.CheckFailure):
+        return
+
+    print(f"❌ Ошибка в команде {ctx.command}: {error}")
+    traceback.print_exc()
+
 
 @bot.check
 async def check_modules_prefix(ctx):
