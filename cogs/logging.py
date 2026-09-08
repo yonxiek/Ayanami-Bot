@@ -73,8 +73,13 @@ class Logging(commands.Cog):
             pass
         return None
 
+    def _actor_footer(self, text: str, actor):
+        if actor:
+            return f"{text}: {actor.display_name} ({actor.id})"
+        return "Ayanami System"
+
     # ==========================================
-    #               СООБЩЕНИЯ
+    #               MESSAGES
     # ==========================================
 
     @commands.Cog.listener()
@@ -85,17 +90,17 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(message.guild, discord.AuditLogAction.message_delete, message.author.id)
 
-        embed = discord.Embed(title="Удалённое сообщение", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Message Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
-        embed.add_field(name="Автор", value=f"{message.author.mention} (`{message.author.id}`)", inline=True)
-        embed.add_field(name="Канал", value=message.channel.mention, inline=True)
+        embed.add_field(name="Author", value=f"{message.author.mention} (`{message.author.id}`)", inline=True)
+        embed.add_field(name="Channel", value=message.channel.mention, inline=True)
         if actor and actor.id != message.author.id:
-            embed.add_field(name="Удалил", value=f"{actor.mention}", inline=True)
+            embed.add_field(name="Deleted By", value=f"{actor.mention}", inline=True)
         if message.content:
-            embed.add_field(name="Содержимое", value=f"```\n{message.content[:1000]}\n```", inline=False)
+            embed.add_field(name="Content", value=f"```\n{message.content[:1000]}\n```", inline=False)
         if message.attachments:
             files = "\n".join([a.filename for a in message.attachments[:5]])
-            embed.add_field(name="Вложения", value=files, inline=False)
+            embed.add_field(name="Attachments", value=files, inline=False)
         embed.set_footer(text="Ayanami System")
         await self.send_log(message.guild.id, embed)
 
@@ -106,19 +111,19 @@ class Logging(commands.Cog):
         if not await self.is_event_enabled(before.guild.id, "msg_edit"):
             return
 
-        embed = discord.Embed(title="Изменённое сообщение", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Message Edited", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=before.author.display_name, icon_url=before.author.display_avatar.url)
-        embed.add_field(name="Канал", value=before.channel.mention, inline=True)
-        embed.add_field(name="Автор", value=before.author.mention, inline=True)
+        embed.add_field(name="Channel", value=before.channel.mention, inline=True)
+        embed.add_field(name="Author", value=before.author.mention, inline=True)
         if before.content:
-            embed.add_field(name="Было", value=f"```\n{before.content[:1000]}\n```", inline=False)
+            embed.add_field(name="Before", value=f"```\n{before.content[:1000]}\n```", inline=False)
         if after.content:
-            embed.add_field(name="Стало", value=f"```\n{after.content[:1000]}\n```", inline=False)
+            embed.add_field(name="After", value=f"```\n{after.content[:1000]}\n```", inline=False)
         embed.set_footer(text="Ayanami System")
         await self.send_log(before.guild.id, embed)
 
     # ==========================================
-    #               УЧАСТНИКИ
+    #               MEMBERS
     # ==========================================
 
     @commands.Cog.listener()
@@ -126,14 +131,14 @@ class Logging(commands.Cog):
         if not await self.is_event_enabled(member.guild.id, "member_join"):
             return
 
-        embed = discord.Embed(title="Участник вошёл", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Member Joined", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-        embed.add_field(name="Участник", value=f"{member.mention} ({member.name}, ID: {member.id})", inline=False)
-        embed.add_field(name="Аккаунт создан", value=f"<t:{int(member.created_at.timestamp())}:R>", inline=True)
+        embed.add_field(name="Member", value=f"{member.mention} ({member.name}, ID: {member.id})", inline=False)
+        embed.add_field(name="Account Created", value=f"<t:{int(member.created_at.timestamp())}:R>", inline=True)
         if member.joined_at:
-            embed.add_field(name="Присоединился", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
+            embed.add_field(name="Joined", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
         if member.premium_since:
-            embed.add_field(name="Буст", value=f"Активен с <t:{int(member.premium_since.timestamp())}:R>", inline=True)
+            embed.add_field(name="Boost", value=f"Active since <t:{int(member.premium_since.timestamp())}:R>", inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(member.guild.id, embed)
 
@@ -142,16 +147,16 @@ class Logging(commands.Cog):
         if not await self.is_event_enabled(member.guild.id, "member_leave"):
             return
 
-        embed = discord.Embed(title="Участник вышел", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Member Left", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-        embed.add_field(name="Участник", value=f"{member.name} (`{member.id}`)", inline=True)
+        embed.add_field(name="Member", value=f"{member.name} (`{member.id}`)", inline=True)
         roles = [r.mention for r in member.roles if not r.is_default()]
         if roles:
-            embed.add_field(name="Роли", value=", ".join(roles[:15]), inline=False)
+            embed.add_field(name="Roles", value=", ".join(roles[:15]), inline=False)
         if member.joined_at:
-            embed.add_field(name="Был на сервере", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
+            embed.add_field(name="Was On Server", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
         if member.premium_since:
-            embed.add_field(name="Буст", value=f"До <t:{int(member.premium_since.timestamp())}:R>", inline=True)
+            embed.add_field(name="Boost", value=f"Until <t:{int(member.premium_since.timestamp())}:R>", inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(member.guild.id, embed)
 
@@ -159,66 +164,60 @@ class Logging(commands.Cog):
     async def on_member_update(self, before, after):
         guild_id = before.guild.id
 
-        # === Роли (выдача/снятие) ===
+        # === Roles (add/remove) ===
         if await self.is_event_enabled(guild_id, "role_add") or await self.is_event_enabled(guild_id, "role_remove"):
             added = [r for r in after.roles if r not in before.roles]
             removed = [r for r in before.roles if r not in after.roles]
             if added and await self.is_event_enabled(guild_id, "role_add"):
                 if not self._is_duplicate(guild_id, "role_add", after.id):
                     actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.member_role_update, after.id)
-                    embed = discord.Embed(title="Роль выдана", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+                    embed = discord.Embed(title="Role Added", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
                     embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                    embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
-                    embed.add_field(name="Роли", value=", ".join([r.mention for r in added]), inline=False)
-                    if actor:
-                        embed.set_footer(text=f"Выполнил: {actor.display_name} ({actor.id})")
-                    else:
-                        embed.set_footer(text="Ayanami System")
+                    embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                    embed.add_field(name="Roles", value=", ".join([r.mention for r in added]), inline=False)
+                    embed.set_footer(text=self._actor_footer("By", actor))
                     await self.send_log(guild_id, embed)
             if removed and await self.is_event_enabled(guild_id, "role_remove"):
                 if not self._is_duplicate(guild_id, "role_remove", after.id):
                     actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.member_role_update, after.id)
-                    embed = discord.Embed(title="Роль снята", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+                    embed = discord.Embed(title="Role Removed", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
                     embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                    embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
-                    embed.add_field(name="Роли", value=", ".join([r.mention for r in removed]), inline=False)
-                    if actor:
-                        embed.set_footer(text=f"Выполнил: {actor.display_name} ({actor.id})")
-                    else:
-                        embed.set_footer(text="Ayanami System")
+                    embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                    embed.add_field(name="Roles", value=", ".join([r.mention for r in removed]), inline=False)
+                    embed.set_footer(text=self._actor_footer("By", actor))
                     await self.send_log(guild_id, embed)
 
-        # === Буст ===
+        # === Boost ===
         if await self.is_event_enabled(guild_id, "boost"):
             was_boosting = before.premium_since is not None
             is_boosting = after.premium_since is not None
             if was_boosting != is_boosting:
                 if not self._is_duplicate(guild_id, "boost", after.id):
                     if is_boosting:
-                        embed = discord.Embed(title="Буст начислен", color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
+                        embed = discord.Embed(title="Boost Added", color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
                         embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                        embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
-                        embed.add_field(name="Начало", value=f"<t:{int(after.premium_since.timestamp())}:R>", inline=True)
+                        embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                        embed.add_field(name="Started", value=f"<t:{int(after.premium_since.timestamp())}:R>", inline=True)
                     else:
-                        embed = discord.Embed(title="Буст снят", color=discord.Color.greyple(), timestamp=datetime.now(timezone.utc))
+                        embed = discord.Embed(title="Boost Removed", color=discord.Color.greyple(), timestamp=datetime.now(timezone.utc))
                         embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                        embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                        embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                     embed.set_footer(text="Ayanami System")
                     await self.send_log(guild_id, embed)
 
-        # === Никнейм ===
+        # === Nickname ===
         if before.nick != after.nick:
             if not await self.is_event_enabled(guild_id, "nickname"):
                 return
             if not self._is_duplicate(guild_id, "nickname", after.id):
                 actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.member_update, after.id)
-                embed = discord.Embed(title="Изменение никнейма", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
+                embed = discord.Embed(title="Nickname Changed", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
                 embed.set_author(name=after.name, icon_url=after.display_avatar.url)
-                embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
-                embed.add_field(name="Старый ник", value=before.nick or before.name, inline=True)
-                embed.add_field(name="Новый ник", value=after.nick or after.name, inline=True)
+                embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                embed.add_field(name="Old Nickname", value=before.nick or before.name, inline=True)
+                embed.add_field(name="New Nickname", value=after.nick or after.name, inline=True)
                 if actor and actor.id != after.id:
-                    embed.set_footer(text=f"Выполнил: {actor.display_name} ({actor.id})")
+                    embed.set_footer(text=f"By: {actor.display_name} ({actor.id})")
                 else:
                     embed.set_footer(text="Ayanami System")
                 await self.send_log(guild_id, embed)
@@ -231,22 +230,22 @@ class Logging(commands.Cog):
                 if before_timeout != after_timeout:
                     if not self._is_duplicate(guild_id, "timeout", after.id):
                         if after_timeout:
-                            embed = discord.Embed(title="Тайм-аут (Discord)", color=discord.Color.greyple(), timestamp=datetime.now(timezone.utc))
+                            embed = discord.Embed(title="Timeout (Discord)", color=discord.Color.greyple(), timestamp=datetime.now(timezone.utc))
                             embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                            embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                            embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                             embed.set_footer(text="Ayanami System")
                             await self.send_log(guild_id, embed)
                         else:
-                            embed = discord.Embed(title="Тайм-аут снят (Discord)", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+                            embed = discord.Embed(title="Timeout Removed (Discord)", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
                             embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                            embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+                            embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                             embed.set_footer(text="Ayanami System")
                             await self.send_log(guild_id, embed)
             except AttributeError:
                 pass
 
     # ==========================================
-    #               РОЛИ (создание/удаление/изменение)
+    #               ROLES (create/delete/update)
     # ==========================================
 
     @commands.Cog.listener()
@@ -257,15 +256,12 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(role.guild, discord.AuditLogAction.role_create, role.id)
 
-        embed = discord.Embed(title="Роль создана", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Role Created", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=role.name, icon_url=role.icon.url if role.icon else discord.Embed.Empty)
-        embed.add_field(name="Роль", value=role.mention, inline=True)
+        embed.add_field(name="Role", value=role.mention, inline=True)
         embed.add_field(name="ID", value=f"`{role.id}`", inline=True)
-        embed.add_field(name="Цвет", value=str(role.color) if role.color != discord.Color.default() else "Не задан", inline=True)
-        if actor:
-            embed.set_footer(text=f"Создал: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Color", value=str(role.color) if role.color != discord.Color.default() else "Not set", inline=True)
+        embed.set_footer(text=self._actor_footer("Created By", actor))
         await self.send_log(role.guild.id, embed)
 
     @commands.Cog.listener()
@@ -276,15 +272,12 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(role.guild, discord.AuditLogAction.role_delete, role.id)
 
-        embed = discord.Embed(title="Роль удалена", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Role Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=role.name)
-        embed.add_field(name="Роль", value=f"`{role.name}` (`{role.id}`)", inline=True)
-        embed.add_field(name="Цвет", value=str(role.color) if role.color != discord.Color.default() else "Не задан", inline=True)
-        embed.add_field(name="У участников", value=str(len(role.members)), inline=True)
-        if actor:
-            embed.set_footer(text=f"Удалил: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Role", value=f"`{role.name}` (`{role.id}`)", inline=True)
+        embed.add_field(name="Color", value=str(role.color) if role.color != discord.Color.default() else "Not set", inline=True)
+        embed.add_field(name="Members", value=str(len(role.members)), inline=True)
+        embed.set_footer(text=self._actor_footer("Deleted By", actor))
         await self.send_log(role.guild.id, embed)
 
     @commands.Cog.listener()
@@ -295,42 +288,39 @@ class Logging(commands.Cog):
             return
         changes = []
         if before.name != after.name:
-            changes.append(f"**Имя**: `{before.name}` → `{after.name}`")
+            changes.append(f"**Name**: `{before.name}` → `{after.name}`")
         if before.color != after.color:
-            changes.append(f"**Цвет**: `{before.color}` → `{after.color}`")
+            changes.append(f"**Color**: `{before.color}` → `{after.color}`")
         if before.permissions != after.permissions:
             old_p = set(before.permissions)
             new_p = set(after.permissions)
             added_perms = new_p - old_p
             removed_perms = old_p - new_p
             if added_perms:
-                changes.append(f"**Добавлены права**: {', '.join([p[0] for p in added_perms])}")
+                changes.append(f"**Permissions Added**: {', '.join([p[0] for p in added_perms])}")
             if removed_perms:
-                changes.append(f"**Убраны права**: {', '.join([p[0] for p in removed_perms])}")
+                changes.append(f"**Permissions Removed**: {', '.join([p[0] for p in removed_perms])}")
         if before.mentionable != after.mentionable:
-            changes.append(f"**Упоминаемая**: {'Да' if after.mentionable else 'Нет'}")
+            changes.append(f"**Mentionable**: {'Yes' if after.mentionable else 'No'}")
         if before.hoist != after.hoist:
-            changes.append(f"**Отдельная группа**: {'Да' if after.hoist else 'Нет'}")
+            changes.append(f"**Hoisted**: {'Yes' if after.hoist else 'No'}")
         if getattr(before, 'icon', None) != getattr(after, 'icon', None):
-            old_icon = "Есть" if getattr(before, 'icon', None) else "Нет"
-            new_icon = "Есть" if getattr(after, 'icon', None) else "Нет"
-            changes.append(f"**Иконка**: {old_icon} → {new_icon}")
+            old_icon = "Yes" if getattr(before, 'icon', None) else "No"
+            new_icon = "Yes" if getattr(after, 'icon', None) else "No"
+            changes.append(f"**Icon**: {old_icon} → {new_icon}")
         if not changes:
             return
         actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.role_update, after.id)
 
-        embed = discord.Embed(title="Роль изменена", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Role Updated", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=after.name, icon_url=after.icon.url if after.icon else discord.Embed.Empty)
-        embed.add_field(name="Роль", value=after.mention, inline=True)
-        embed.add_field(name="Изменения", value="\n".join(changes), inline=False)
-        if actor:
-            embed.set_footer(text=f"Изменил: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Role", value=after.mention, inline=True)
+        embed.add_field(name="Changes", value="\n".join(changes), inline=False)
+        embed.set_footer(text=self._actor_footer("Changed By", actor))
         await self.send_log(after.guild.id, embed)
 
     # ==========================================
-    #               ЭМОДЗИ / СТИКЕРЫ
+    #               EMOJIS / STICKERS
     # ==========================================
 
     @commands.Cog.listener()
@@ -349,29 +339,26 @@ class Logging(commands.Cog):
 
         for emoji in added:
             actor = await self.get_audit_actor(guild, discord.AuditLogAction.emoji_create, emoji.id)
-            embed = discord.Embed(title="Эмодзи добавлен", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Emoji Added", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=f":{emoji.name}:", icon_url=emoji.url if emoji.url else discord.Embed.Empty)
-            embed.add_field(name="Анимированный", value="Да" if emoji.animated else "Нет", inline=True)
-            if actor:
-                embed.set_footer(text=f"Добавил: {actor.display_name} ({actor.id})")
+            embed.add_field(name="Animated", value="Yes" if emoji.animated else "No", inline=True)
+            embed.set_footer(text=self._actor_footer("Added By", actor))
             await self.send_log(guild.id, embed)
 
         for emoji in removed:
             actor = await self.get_audit_actor(guild, discord.AuditLogAction.emoji_delete, emoji.id)
-            embed = discord.Embed(title="Эмодзи удалён", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Emoji Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=f":{emoji.name}:")
-            if actor:
-                embed.set_footer(text=f"Удалил: {actor.display_name} ({actor.id})")
+            embed.set_footer(text=self._actor_footer("Deleted By", actor))
             await self.send_log(guild.id, embed)
 
         for old_e, new_e in edited:
             actor = await self.get_audit_actor(guild, discord.AuditLogAction.emoji_update, new_e.id)
-            embed = discord.Embed(title="Эмодзи изменён", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Emoji Updated", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=f":{new_e.name}:", icon_url=new_e.url if new_e.url else discord.Embed.Empty)
-            embed.add_field(name="Старое имя", value=f"`:{old_e.name}:`", inline=True)
-            embed.add_field(name="Новое имя", value=f"`:{new_e.name}:`", inline=True)
-            if actor:
-                embed.set_footer(text=f"Изменил: {actor.display_name} ({actor.id})")
+            embed.add_field(name="Old Name", value=f"`:{old_e.name}:`", inline=True)
+            embed.add_field(name="New Name", value=f"`:{new_e.name}:`", inline=True)
+            embed.set_footer(text=self._actor_footer("Changed By", actor))
             await self.send_log(guild.id, embed)
 
     @commands.Cog.listener()
@@ -390,45 +377,42 @@ class Logging(commands.Cog):
 
         for sticker in added:
             actor = await self.get_audit_actor(guild, discord.AuditLogAction.sticker_create, sticker.id)
-            embed = discord.Embed(title="Стикер добавлен", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Sticker Added", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=sticker.name)
             if sticker.description:
-                embed.add_field(name="Описание", value=sticker.description[:100], inline=False)
-            if actor:
-                embed.set_footer(text=f"Добавил: {actor.display_name} ({actor.id})")
+                embed.add_field(name="Description", value=sticker.description[:100], inline=False)
+            embed.set_footer(text=self._actor_footer("Added By", actor))
             await self.send_log(guild.id, embed)
 
         for sticker in removed:
             actor = await self.get_audit_actor(guild, discord.AuditLogAction.sticker_delete, sticker.id)
-            embed = discord.Embed(title="Стикер удалён", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Sticker Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=sticker.name)
-            if actor:
-                embed.set_footer(text=f"Удалил: {actor.display_name} ({actor.id})")
+            embed.set_footer(text=self._actor_footer("Deleted By", actor))
             await self.send_log(guild.id, embed)
 
         for old_s, new_s in edited:
             actor = await self.get_audit_actor(guild, discord.AuditLogAction.sticker_update, new_s.id)
-            embed = discord.Embed(title="Стикер изменён", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Sticker Updated", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=new_s.name)
-            embed.add_field(name="Старое имя", value=f"`{old_s.name}`", inline=True)
-            embed.add_field(name="Новое имя", value=f"`{new_s.name}`", inline=True)
-            if actor:
-                embed.set_footer(text=f"Изменил: {actor.display_name} ({actor.id})")
+            embed.add_field(name="Old Name", value=f"`{old_s.name}`", inline=True)
+            embed.add_field(name="New Name", value=f"`{new_s.name}`", inline=True)
+            embed.set_footer(text=self._actor_footer("Changed By", actor))
             await self.send_log(guild.id, embed)
 
     # ==========================================
-    #               САУНДБОРД
+    #               SOUNDBOARD
     # ==========================================
 
     @commands.Cog.listener()
     async def on_guild_soundboard_sound_create(self, sound):
         if not await self.is_event_enabled(sound.guild.id, "soundboard"):
             return
-        embed = discord.Embed(title="Саундборд — звук добавлен", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Soundboard — Sound Added", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=sound.name)
-        embed.add_field(name="Эмодзи", value=str(sound.emoji_name) if sound.emoji_name else "—", inline=True)
+        embed.add_field(name="Emoji", value=str(sound.emoji_name) if sound.emoji_name else "—", inline=True)
         if hasattr(sound, 'user') and sound.user:
-            embed.add_field(name="Создал", value=f"{sound.user.mention}", inline=True)
+            embed.add_field(name="Created By", value=f"{sound.user.mention}", inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(sound.guild.id, embed)
 
@@ -436,7 +420,7 @@ class Logging(commands.Cog):
     async def on_guild_soundboard_sound_delete(self, sound):
         if not await self.is_event_enabled(sound.guild.id, "soundboard"):
             return
-        embed = discord.Embed(title="Саундборд — звук удалён", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Soundboard — Sound Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=sound.name)
         embed.set_footer(text="Ayanami System")
         await self.send_log(sound.guild.id, embed)
@@ -447,21 +431,21 @@ class Logging(commands.Cog):
             return
         changes = []
         if before.name != after.name:
-            changes.append(f"**Имя**: `{before.name}` → `{after.name}`")
+            changes.append(f"**Name**: `{before.name}` → `{after.name}`")
         if before.volume != after.volume:
-            changes.append(f"**Громкость**: `{before.volume}` → `{after.volume}`")
+            changes.append(f"**Volume**: `{before.volume}` → `{after.volume}`")
         if before.emoji_name != after.emoji_name:
-            changes.append(f"**Эмодзи**: `{before.emoji_name}` → `{after.emoji_name}`")
+            changes.append(f"**Emoji**: `{before.emoji_name}` → `{after.emoji_name}`")
         if not changes:
             return
-        embed = discord.Embed(title="Саундборд — звук изменён", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Soundboard — Sound Updated", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=after.name)
-        embed.add_field(name="Изменения", value="\n".join(changes), inline=False)
+        embed.add_field(name="Changes", value="\n".join(changes), inline=False)
         embed.set_footer(text="Ayanami System")
         await self.send_log(before.guild.id, embed)
 
     # ==========================================
-    #               ГОЛОС
+    #               VOICE
     # ==========================================
 
     @commands.Cog.listener()
@@ -476,10 +460,10 @@ class Logging(commands.Cog):
             self.voice_sessions.setdefault(guild_id, {})[user_id] = datetime.now(timezone.utc)
             if not await self.is_event_enabled(guild_id, "voice_connect"):
                 return
-            embed = discord.Embed(title="Подключение к голосовому", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Voice Connected", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-            embed.add_field(name="Участник", value=member.mention, inline=True)
-            embed.add_field(name="Канал", value=after.channel.mention, inline=True)
+            embed.add_field(name="Member", value=member.mention, inline=True)
+            embed.add_field(name="Channel", value=after.channel.mention, inline=True)
             embed.set_footer(text="Ayanami System")
             await self.send_log(guild_id, embed)
 
@@ -494,31 +478,31 @@ class Logging(commands.Cog):
                 minutes, seconds = divmod(remainder, 60)
                 parts = []
                 if hours:
-                    parts.append(f"{hours}ч")
+                    parts.append(f"{hours}h")
                 if minutes:
-                    parts.append(f"{minutes}м")
-                parts.append(f"{seconds}с")
+                    parts.append(f"{minutes}m")
+                parts.append(f"{seconds}s")
                 duration_text = " ".join(parts)
 
             if not await self.is_event_enabled(guild_id, "voice_disconnect"):
                 return
-            embed = discord.Embed(title="Отключение от голосового", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Voice Disconnected", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-            embed.add_field(name="Участник", value=member.mention, inline=True)
-            embed.add_field(name="Канал", value=before.channel.mention, inline=True)
+            embed.add_field(name="Member", value=member.mention, inline=True)
+            embed.add_field(name="Channel", value=before.channel.mention, inline=True)
             if duration_text:
-                embed.add_field(name="Длительность", value=duration_text, inline=True)
+                embed.add_field(name="Duration", value=duration_text, inline=True)
             embed.set_footer(text="Ayanami System")
             await self.send_log(guild_id, embed)
 
         elif before.channel and after.channel and before.channel != after.channel:
             if not await self.is_event_enabled(guild_id, "voice_move"):
                 return
-            embed = discord.Embed(title="Перемещение в голосовом", color=discord.Color.blue(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Voice Moved", color=discord.Color.blue(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-            embed.add_field(name="Участник", value=member.mention, inline=True)
-            embed.add_field(name="Откуда", value=before.channel.mention, inline=True)
-            embed.add_field(name="Куда", value=after.channel.mention, inline=True)
+            embed.add_field(name="Member", value=member.mention, inline=True)
+            embed.add_field(name="From", value=before.channel.mention, inline=True)
+            embed.add_field(name="To", value=after.channel.mention, inline=True)
             embed.set_footer(text="Ayanami System")
             await self.send_log(guild_id, embed)
 
@@ -528,24 +512,24 @@ class Logging(commands.Cog):
                 return
             changes = []
             if before.self_mute != after.self_mute:
-                changes.append(f"**Свой микрофон**: {'🔇 Выкл' if after.self_mute else '🔊 Вкл'}")
+                changes.append(f"**Microphone**: {'🔇 Off' if after.self_mute else '🔊 On'}")
             if before.self_deaf != after.self_deaf:
-                changes.append(f"**Свой звук**: {'🔇 Выкл' if after.self_deaf else '🔊 Вкл'}")
+                changes.append(f"**Sound**: {'🔇 Off' if after.self_deaf else '🔊 On'}")
             if before.mute != after.mute:
-                changes.append(f"**Мут (админ)**: {'🔇 Выкл' if after.mute else '🔊 Вкл'}")
+                changes.append(f"**Mute (admin)**: {'🔇 Off' if after.mute else '🔊 On'}")
             if before.deaf != after.deaf:
-                changes.append(f"**Глухота (админ)**: {'🔇 Выкл' if after.deaf else '🔊 Вкл'}")
+                changes.append(f"**Deafen (admin)**: {'🔇 Off' if after.deaf else '🔊 On'}")
             if changes:
-                embed = discord.Embed(title="Изменение голосового состояния", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
+                embed = discord.Embed(title="Voice State Updated", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
                 embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-                embed.add_field(name="Участник", value=member.mention, inline=True)
-                embed.add_field(name="Канал", value=(after.channel or before.channel).mention, inline=True)
-                embed.add_field(name="Изменения", value="\n".join(changes), inline=False)
+                embed.add_field(name="Member", value=member.mention, inline=True)
+                embed.add_field(name="Channel", value=(after.channel or before.channel).mention, inline=True)
+                embed.add_field(name="Changes", value="\n".join(changes), inline=False)
                 embed.set_footer(text="Ayanami System")
                 await self.send_log(member.guild.id, embed)
 
     # ==========================================
-    #               СЕРВЕР
+    #               SERVER
     # ==========================================
 
     @commands.Cog.listener()
@@ -554,63 +538,60 @@ class Logging(commands.Cog):
             return
         changes = []
         if before.name != after.name:
-            changes.append(f"**Название**: `{before.name}` → `{after.name}`")
+            changes.append(f"**Name**: `{before.name}` → `{after.name}`")
         if before.icon != after.icon:
-            changes.append("**Иконка**: обновлена" if after.icon else "**Иконка**: удалена")
+            changes.append("**Icon**: updated" if after.icon else "**Icon**: removed")
         if before.splash != after.splash:
-            changes.append("**Спласш**: обновлён" if after.splash else "**Спласш**: удалён")
+            changes.append("**Splash**: updated" if after.splash else "**Splash**: removed")
         if before.discovery_splash != after.discovery_splash:
-            changes.append("**Спласш открытия**: обновлён" if after.discovery_splash else "**Спласш открытия**: удалён")
+            changes.append("**Discovery Splash**: updated" if after.discovery_splash else "**Discovery Splash**: removed")
         if before.banner != after.banner:
-            changes.append("**Баннер**: обновлён" if after.banner else "**Баннер**: удалён")
+            changes.append("**Banner**: updated" if after.banner else "**Banner**: removed")
         if before.vanity_url_code != after.vanity_url_code:
-            old_v = f"`{before.vanity_url_code}`" if before.vanity_url_code else "нет"
-            new_v = f"`{after.vanity_url_code}`" if after.vanity_url_code else "нет"
+            old_v = f"`{before.vanity_url_code}`" if before.vanity_url_code else "none"
+            new_v = f"`{after.vanity_url_code}`" if after.vanity_url_code else "none"
             changes.append(f"**Vanity URL**: {old_v} → {new_v}")
         if before.owner_id != after.owner_id:
-            changes.append(f"**Владелец**: <@{before.owner_id}> → <@{after.owner_id}>")
+            changes.append(f"**Owner**: <@{before.owner_id}> → <@{after.owner_id}>")
         if before.description != after.description:
-            changes.append(f"**Описание**: `{(before.description or 'нет')[:100]}` → `{(after.description or 'нет')[:100]}`")
+            changes.append(f"**Description**: `{(before.description or 'none')[:100]}` → `{(after.description or 'none')[:100]}`")
         if before.system_channel != after.system_channel:
-            old_ch = before.system_channel.mention if before.system_channel else "нет"
-            new_ch = after.system_channel.mention if after.system_channel else "нет"
-            changes.append(f"**Системный канал**: {old_ch} → {new_ch}")
+            old_ch = before.system_channel.mention if before.system_channel else "none"
+            new_ch = after.system_channel.mention if after.system_channel else "none"
+            changes.append(f"**System Channel**: {old_ch} → {new_ch}")
         if before.rules_channel != after.rules_channel:
-            old_ch = before.rules_channel.mention if before.rules_channel else "нет"
-            new_ch = after.rules_channel.mention if after.rules_channel else "нет"
-            changes.append(f"**Канал правил**: {old_ch} → {new_ch}")
+            old_ch = before.rules_channel.mention if before.rules_channel else "none"
+            new_ch = after.rules_channel.mention if after.rules_channel else "none"
+            changes.append(f"**Rules Channel**: {old_ch} → {new_ch}")
         if before.public_updates_channel != after.public_updates_channel:
-            old_ch = before.public_updates_channel.mention if before.public_updates_channel else "нет"
-            new_ch = after.public_updates_channel.mention if after.public_updates_channel else "нет"
-            changes.append(f"**Канал обновлений**: {old_ch} → {new_ch}")
+            old_ch = before.public_updates_channel.mention if before.public_updates_channel else "none"
+            new_ch = after.public_updates_channel.mention if after.public_updates_channel else "none"
+            changes.append(f"**Updates Channel**: {old_ch} → {new_ch}")
         if before.verification_level != after.verification_level:
-            changes.append(f"**Уровень верификации**: `{before.verification_level}` → `{after.verification_level}`")
+            changes.append(f"**Verification Level**: `{before.verification_level}` → `{after.verification_level}`")
         if before.explicit_content_filter != after.explicit_content_filter:
-            changes.append(f"**Фильтр контента**: `{before.explicit_content_filter}` → `{after.explicit_content_filter}`")
+            changes.append(f"**Explicit Content Filter**: `{before.explicit_content_filter}` → `{after.explicit_content_filter}`")
         if before.default_notifications != after.default_notifications:
-            changes.append(f"**Уведомления по умолчанию**: `{before.default_notifications}` → `{after.default_notifications}`")
+            changes.append(f"**Default Notifications**: `{before.default_notifications}` → `{after.default_notifications}`")
         if before.mfa_level != after.mfa_level:
-            changes.append(f"**Требовать 2FA**: {'Да' if after.mfa_level else 'Нет'}")
+            changes.append(f"**Require 2FA**: {'Yes' if after.mfa_level else 'No'}")
         if before.premium_tier != after.premium_tier:
-            changes.append(f"**Уровень буста**: `{before.premium_tier}` → `{after.premium_tier}`")
+            changes.append(f"**Boost Tier**: `{before.premium_tier}` → `{after.premium_tier}`")
         if before.premium_subscript_count != after.premium_subscript_count:
-            changes.append(f"**Количество бустов**: `{before.premium_subscript_count}` → `{after.premium_subscript_count}`")
+            changes.append(f"**Boost Count**: `{before.premium_subscript_count}` → `{after.premium_subscript_count}`")
         if not changes:
             return
         actor = await self.get_audit_actor(after, discord.AuditLogAction.guild_update, after.id)
 
-        embed = discord.Embed(title="Сервер изменён", color=discord.Color.blue(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Server Updated", color=discord.Color.blue(), timestamp=datetime.now(timezone.utc))
         if after.icon:
             embed.set_thumbnail(url=after.icon.url)
-        embed.add_field(name="Изменения", value="\n".join(changes), inline=False)
-        if actor:
-            embed.set_footer(text=f"Изменил: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Changes", value="\n".join(changes), inline=False)
+        embed.set_footer(text=self._actor_footer("Changed By", actor))
         await self.send_log(after.id, embed)
 
     # ==========================================
-    #               ТРЕДЫ
+    #               THREADS
     # ==========================================
 
     @commands.Cog.listener()
@@ -619,15 +600,12 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(thread.guild, discord.AuditLogAction.thread_create, thread.id)
 
-        embed = discord.Embed(title="Тред создан", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Thread Created", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=thread.name)
-        embed.add_field(name="Тред", value=thread.mention, inline=True)
-        embed.add_field(name="Канал", value=thread.parent.mention if thread.parent else "—", inline=True)
-        embed.add_field(name="Автоархив", value=f"{thread.auto_archive_duration} мин", inline=True)
-        if actor:
-            embed.set_footer(text=f"Создал: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Thread", value=thread.mention, inline=True)
+        embed.add_field(name="Channel", value=thread.parent.mention if thread.parent else "—", inline=True)
+        embed.add_field(name="Auto-Archive", value=f"{thread.auto_archive_duration} min", inline=True)
+        embed.set_footer(text=self._actor_footer("Created By", actor))
         await self.send_log(thread.guild.id, embed)
 
     @commands.Cog.listener()
@@ -636,36 +614,33 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(thread.guild, discord.AuditLogAction.thread_delete, thread.id)
 
-        embed = discord.Embed(title="Тред удалён", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Thread Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=thread.name)
-        embed.add_field(name="Тред", value=f"`{thread.name}` (`{thread.id}`)", inline=True)
-        embed.add_field(name="Канал", value=thread.parent.mention if thread.parent else "—", inline=True)
-        if actor:
-            embed.set_footer(text=f"Удалил: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Thread", value=f"`{thread.name}` (`{thread.id}`)", inline=True)
+        embed.add_field(name="Channel", value=thread.parent.mention if thread.parent else "—", inline=True)
+        embed.set_footer(text=self._actor_footer("Deleted By", actor))
         await self.send_log(thread.guild.id, embed)
 
     # ==========================================
-    #               ИВЕНТЫ
+    #               EVENTS
     # ==========================================
 
     @commands.Cog.listener()
     async def on_scheduled_event_create(self, event):
         if not await self.is_event_enabled(event.guild.id, "events"):
             return
-        embed = discord.Embed(title="Ивент создан", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Event Created", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=event.name)
-        embed.add_field(name="Название", value=event.name, inline=True)
-        embed.add_field(name="Канал", value=event.channel.mention if event.channel else "—", inline=True)
+        embed.add_field(name="Name", value=event.name, inline=True)
+        embed.add_field(name="Channel", value=event.channel.mention if event.channel else "—", inline=True)
         if event.description:
-            embed.add_field(name="Описание", value=event.description[:500], inline=False)
-        embed.add_field(name="Начало", value=f"<t:{int(event.start_time.timestamp())}:F>", inline=True)
+            embed.add_field(name="Description", value=event.description[:500], inline=False)
+        embed.add_field(name="Start", value=f"<t:{int(event.start_time.timestamp())}:F>", inline=True)
         if event.end_time:
-            embed.add_field(name="Конец", value=f"<t:{int(event.end_time.timestamp())}:F>", inline=True)
-        embed.add_field(name="Статус", value=str(event.status).title(), inline=True)
+            embed.add_field(name="End", value=f"<t:{int(event.end_time.timestamp())}:F>", inline=True)
+        embed.add_field(name="Status", value=str(event.status).title(), inline=True)
         if event.creator:
-            embed.set_footer(text=f"Создал: {event.creator.display_name} ({event.creator.id})")
+            embed.set_footer(text=f"Created By: {event.creator.display_name} ({event.creator.id})")
         else:
             embed.set_footer(text="Ayanami System")
         await self.send_log(event.guild.id, embed)
@@ -676,25 +651,25 @@ class Logging(commands.Cog):
             return
         changes = []
         if before.name != after.name:
-            changes.append(f"**Название**: `{before.name}` → `{after.name}`")
+            changes.append(f"**Name**: `{before.name}` → `{after.name}`")
         if before.description != after.description:
-            changes.append(f"**Описание**: обновлена")
+            changes.append(f"**Description**: updated")
         if before.start_time != after.start_time:
-            changes.append(f"**Начало**: <t:{int(before.start_time.timestamp())}:R> → <t:{int(after.start_time.timestamp())}:R>")
+            changes.append(f"**Start**: <t:{int(before.start_time.timestamp())}:R> → <t:{int(after.start_time.timestamp())}:R>")
         if before.end_time != after.end_time:
             if after.end_time:
-                changes.append(f"**Конец**: <t:{int(after.end_time.timestamp())}:R>")
+                changes.append(f"**End**: <t:{int(after.end_time.timestamp())}:R>")
         if before.channel != after.channel:
-            old_ch = before.channel.mention if before.channel else "нет"
-            new_ch = after.channel.mention if after.channel else "нет"
-            changes.append(f"**Канал**: {old_ch} → {new_ch}")
+            old_ch = before.channel.mention if before.channel else "none"
+            new_ch = after.channel.mention if after.channel else "none"
+            changes.append(f"**Channel**: {old_ch} → {new_ch}")
         if before.status != after.status:
-            changes.append(f"**Статус**: `{before.status}` → `{after.status}`")
+            changes.append(f"**Status**: `{before.status}` → `{after.status}`")
         if not changes:
             return
-        embed = discord.Embed(title="Ивент изменён", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Event Updated", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=after.name)
-        embed.add_field(name="Изменения", value="\n".join(changes), inline=False)
+        embed.add_field(name="Changes", value="\n".join(changes), inline=False)
         embed.set_footer(text="Ayanami System")
         await self.send_log(after.guild.id, embed)
 
@@ -702,15 +677,15 @@ class Logging(commands.Cog):
     async def on_scheduled_event_delete(self, event):
         if not await self.is_event_enabled(event.guild.id, "events"):
             return
-        embed = discord.Embed(title="Ивент удалён", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Event Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=event.name)
-        embed.add_field(name="Название", value=f"`{event.name}`", inline=True)
-        embed.add_field(name="Статус", value=str(event.status).title(), inline=True)
+        embed.add_field(name="Name", value=f"`{event.name}`", inline=True)
+        embed.add_field(name="Status", value=str(event.status).title(), inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(event.guild.id, embed)
 
     # ==========================================
-    #               КАНАЛЫ
+    #               CHANNELS
     # ==========================================
 
     @commands.Cog.listener()
@@ -719,14 +694,11 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(channel.guild, discord.AuditLogAction.channel_create, channel.id)
 
-        embed = discord.Embed(title="Канал создан", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Channel Created", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=channel.name)
-        embed.add_field(name="Канал", value=channel.mention, inline=True)
-        embed.add_field(name="Тип", value=str(channel.type).replace("_", " ").title(), inline=True)
-        if actor:
-            embed.set_footer(text=f"Создал: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="Type", value=str(channel.type).replace("_", " ").title(), inline=True)
+        embed.set_footer(text=self._actor_footer("Created By", actor))
         await self.send_log(channel.guild.id, embed)
 
     @commands.Cog.listener()
@@ -735,18 +707,15 @@ class Logging(commands.Cog):
             return
         actor = await self.get_audit_actor(channel.guild, discord.AuditLogAction.channel_delete, channel.id)
 
-        embed = discord.Embed(title="Канал удалён", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Channel Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=channel.name)
-        embed.add_field(name="Канал", value=f"`{channel.name}` (`{channel.id}`)", inline=True)
-        embed.add_field(name="Тип", value=str(channel.type).replace("_", " ").title(), inline=True)
-        if actor:
-            embed.set_footer(text=f"Удалил: {actor.display_name} ({actor.id})")
-        else:
-            embed.set_footer(text="Ayanami System")
+        embed.add_field(name="Channel", value=f"`{channel.name}` (`{channel.id}`)", inline=True)
+        embed.add_field(name="Type", value=str(channel.type).replace("_", " ").title(), inline=True)
+        embed.set_footer(text=self._actor_footer("Deleted By", actor))
         await self.send_log(channel.guild.id, embed)
 
     # ==========================================
-    #               НАКАЗАНИЯ (через dispatch)
+    #               PUNISHMENTS (via dispatch)
     # ==========================================
 
     @commands.Cog.listener()
@@ -823,7 +792,7 @@ class Logging(commands.Cog):
         await self.send_log(guild.id, embed, mod_only=True)
 
     # ==========================================
-    #               КОМАНДЫ
+    #               COMMANDS
     # ==========================================
 
     @commands.Cog.listener()
@@ -865,7 +834,7 @@ class Logging(commands.Cog):
         await self.send_log(ctx.guild.id, embed)
 
     # ==========================================
-    #               АВАТАР / БАННЕР
+    #               AVATAR / BANNER
     # ==========================================
 
     @commands.Cog.listener()
@@ -874,15 +843,15 @@ class Logging(commands.Cog):
             return
         changes = []
         if before.display_avatar.url != after.display_avatar.url:
-            changes.append(("Аватар", before.display_avatar.url, after.display_avatar.url))
+            changes.append(("Avatar", before.display_avatar.url, after.display_avatar.url))
         if getattr(before, 'banner', None) != getattr(after, 'banner', None):
-            old_banner = before.banner.url if before.banner else "нет"
-            new_banner = after.banner.url if after.banner else "нет"
-            changes.append(("Баннер", old_banner, new_banner))
+            old_banner = before.banner.url if before.banner else "none"
+            new_banner = after.banner.url if after.banner else "none"
+            changes.append(("Banner", old_banner, new_banner))
         if before.name != after.name:
-            changes.append(("Имя", f"`{before.name}`", f"`{after.name}`"))
+            changes.append(("Name", f"`{before.name}`", f"`{after.name}`"))
         if before.discriminator != after.discriminator:
-            changes.append(("Дискриминатор", f"`{before.discriminator}`", f"`{after.discriminator}`"))
+            changes.append(("Discriminator", f"`{before.discriminator}`", f"`{after.discriminator}`"))
 
         if not changes:
             return
@@ -890,20 +859,20 @@ class Logging(commands.Cog):
         for guild in after.mutual_guilds:
             if not await self.is_event_enabled(guild.id, "avatar"):
                 continue
-            embed = discord.Embed(title="Профиль обновлён", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
+            embed = discord.Embed(title="Profile Updated", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-            embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
+            embed.add_field(name="Member", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
             for name, old_val, new_val in changes:
-                if "URL" in name or name == "Аватар" or name == "Баннер":
-                    embed.add_field(name=f"{name} (было)", value=old_val[:100] if old_val != "нет" else "нет", inline=True)
-                    embed.add_field(name=f"{name} (стало)", value=new_val[:100] if new_val != "нет" else "нет", inline=True)
+                if "URL" in name or name == "Avatar" or name == "Banner":
+                    embed.add_field(name=f"{name} (Before)", value=old_val[:100] if old_val != "none" else "none", inline=True)
+                    embed.add_field(name=f"{name} (After)", value=new_val[:100] if new_val != "none" else "none", inline=True)
                 else:
                     embed.add_field(name=name, value=f"{old_val} → {new_val}", inline=True)
             embed.set_footer(text="Ayanami System")
             await self.send_log(guild.id, embed)
 
     # ==========================================
-    #               ЗАКРЕПЛЕНИЕ
+    #               PINS
     # ==========================================
 
     @commands.Cog.listener()
@@ -914,13 +883,13 @@ class Logging(commands.Cog):
         if not await self.is_event_enabled(guild_id, "pins"):
             return
 
-        embed = discord.Embed(title="Сообщение закреплено", color=discord.Color.yellow(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Message Pinned", color=discord.Color.yellow(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
-        embed.add_field(name="Автор", value=f"{message.author.mention} (`{message.author.id}`)", inline=True)
-        embed.add_field(name="Канал", value=message.channel.mention, inline=True)
+        embed.add_field(name="Author", value=f"{message.author.mention} (`{message.author.id}`)", inline=True)
+        embed.add_field(name="Channel", value=message.channel.mention, inline=True)
         if message.content:
-            embed.add_field(name="Содержимое", value=f"```\n{message.content[:1000]}\n```", inline=False)
-        embed.add_field(name="Ссылка", value=f"[Перейти]({message.jump_url})", inline=True)
+            embed.add_field(name="Content", value=f"```\n{message.content[:1000]}\n```", inline=False)
+        embed.add_field(name="Link", value=f"[Jump]({message.jump_url})", inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(guild_id, embed)
 
