@@ -290,16 +290,18 @@ class Moderation(commands.Cog):
         await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "warn", 1)
         self.bot.dispatch("moderation_log", "warn", interaction.guild, member, interaction.user, reason=reason)
 
+        # === Текущее количество варнов ===
+        cursor = await self.db.conn.execute(
+            'SELECT COUNT(*) FROM warns WHERE guild_id = ? AND user_id = ?',
+            (str(interaction.guild.id), str(member.id)))
+        row = await cursor.fetchone()
+        warn_count = row[0] if row else 0
+
         # === Warn limit → автодействие ===
         config = await self.db.get_guild_config(str(interaction.guild.id))
         warn_limit = config.get("warn_limit", 0)
         warn_action = config.get("warn_action", "kick")
         if warn_limit > 0:
-            cursor = await self.db.conn.execute(
-                'SELECT COUNT(*) FROM warns WHERE guild_id = ? AND user_id = ?',
-                (str(interaction.guild.id), str(member.id)))
-            row = await cursor.fetchone()
-            warn_count = row[0] if row else 0
             if warn_count >= warn_limit:
                 try:
                     if warn_action == "ban":
@@ -334,8 +336,12 @@ class Moderation(commands.Cog):
         user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
-        for name, value in [("Варнов", f"{warn_count if warn_limit > 0 else '∞'}" + (f" / {warn_limit} → {action_text}" if warn_limit > 0 and action_text else ""))]:
-            embed.add_field(name=name, value=value, inline=False)
+        value_text = str(warn_count)
+        if warn_limit > 0:
+            value_text += f" / {warn_limit}"
+            if action_text:
+                value_text += f" → {action_text}"
+        embed.add_field(name="Варнов", value=value_text, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
         await self.send_punishment_notice(member, "предупреждены", reason, interaction.guild)
