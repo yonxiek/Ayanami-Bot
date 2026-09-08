@@ -7,7 +7,6 @@
 
 import os
 from pathlib import Path
-
 from dotenv import load_dotenv
 
 # Базовая директория проекта (родительская по отношению к этому файлу)
@@ -47,7 +46,7 @@ def get_bool(name: str, default: bool = False) -> bool:
 TOKEN: str | None = get("TOKEN")
 
 #: Префикс для текстовых (не slash) команд
-PREFIX: str = get("PREFIX", ",") or ","
+PREFIX: str = get("PREFIX", "!") or "!"
 
 #: Путь к файлу SQLite базы данных
 DB_URL: str = get("DB_URL", "data/bot.db") or "data/bot.db"

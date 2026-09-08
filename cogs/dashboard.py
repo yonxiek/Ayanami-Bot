@@ -53,6 +53,7 @@ class DashboardView(discord.ui.LayoutView):
         boost = '🟢' if config.get('boost_enabled') else '🔴'
         autorole = '🟢' if config.get('autorole_enabled') else '🔴'
         status_lines.append(f"👋 **Приветствия:** {welcome} Привет | {leave} Прощание | {boost} Буст | {autorole} Автороли")
+        status_lines.append(f"📝 **Префикс:** `{config.get('prefix', '!')}` | 🟢 **Статус:** `{config.get('bot_status_text', '') or '—'}`")
 
         container = discord.ui.Container(accent_color=Colors.MAIN)
         container.add_item(discord.ui.TextDisplay("### Ayanami System | Настройка"))
@@ -197,6 +198,7 @@ class SetupAdminView(discord.ui.View):
 
         lines = [
             f"### Основные настройки",
+            f"**Префикс:** `{config.get('prefix', '!')}`",
             f"**Админ-роли:** {role_list(admin_roles)}",
             f"**Роли персонала:** {role_list(staff_roles)}",
             f"**Системный канал:** {f'<#{sys_ch}>' if sys_ch else 'Не задан'}",
@@ -287,6 +289,34 @@ class SetupAdminView(discord.ui.View):
         modal.status_type.default = status_type
         modal.status_text.default = status_text
         await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Префикс сервера", emoji="📝", style=discord.ButtonStyle.green, row=4)
+    async def btn_server_prefix(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        modal = PrefixModal(self.db, self.guild_id)
+        modal.prefix_input.default = config.get("prefix", "!")
+        await interaction.response.send_modal(modal)
+
+
+class PrefixModal(discord.ui.Modal, title="Префикс сервера"):
+    prefix_input = discord.ui.TextInput(
+        label="Префикс команд",
+        placeholder="Например: !",
+        required=True,
+        max_length=3,
+    )
+
+    def __init__(self, db, guild_id):
+        super().__init__()
+        self.db = db
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        prefix = self.prefix_input.value.strip()
+        if not prefix:
+            return await interaction.response.send_message("❌ Префикс не может быть пустым!", ephemeral=True)
+        await self.db.update_config_field(str(self.guild_id), "prefix", prefix)
+        await interaction.response.send_message(f"✅ Префикс сервера: `{prefix}`", ephemeral=True)
 
 
 class BotStatusModal(discord.ui.Modal, title="Статус бота"):
