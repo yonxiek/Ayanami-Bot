@@ -50,6 +50,7 @@ class UnwarnModal(discord.ui.Modal, title="Снятие предупрежден
 
         await interaction.followup.send(embed=embed)
         self.cog.bot.dispatch("moderation_log", "unwarn", interaction.guild, self.target_member, interaction.user, reason=f"Снят варн #{self.warn_id.value}")
+        await self.cog.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unwarn", 1)
 
 class Moderation(commands.Cog):
 
@@ -89,10 +90,11 @@ class Moderation(commands.Cog):
         stats = await self.db.get_mod_stats(str(interaction.guild.id), str(target.id))
         
         fields_map = {
-            "mute": "Муты", "unmute": "Снятие мутов", 
-            "warn": "Варны", "unwarn": "Снятие варнов", 
-            "kick": "Кики", "ban": "Баны", "unban": "Разбаны", 
-            "blacklist": "ЧС", "unblacklist": "Снятие ЧС"
+            "mute": "Муты", "unmute": "Снятие мутов",
+            "warn": "Варны", "unwarn": "Снятие варнов",
+            "kick": "Кики", "ban": "Баны", "unban": "Разбаны",
+            "blacklist": "ЧС", "unblacklist": "Снятие ЧС",
+            "report_resolved": "Закрытые жалобы"
         }
 
         desc = ""
@@ -428,6 +430,7 @@ class Moderation(commands.Cog):
     async def unban(self, interaction: discord.Interaction, member: discord.User, reason: str = "Не указана"):
 
         await interaction.guild.unban(member)
+        await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unban", 1)
         self.bot.dispatch("moderation_log", "unban", interaction.guild, member, interaction.user, reason=reason)
         
         embed = discord.Embed(color=discord.Color(0x2b2d31))
