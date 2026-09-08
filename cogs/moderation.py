@@ -101,14 +101,10 @@ class Moderation(commands.Cog):
         total = 0
         for key, label in fields_map.items():
             count = stats.get(key, 0)
-            if count > 0:
-                desc += f"> **{label}:** `{count}`\n"
-                total += count
+            desc += f"> **{label}:** `{count}`\n"
+            total += count
 
-        if not desc:
-            desc = "*Действий еще не совершено*"
-        else:
-            desc += f"> **Всего:** `{total}`"
+        desc += f"> **Всего:** `{total}`"
 
         embed = discord.Embed(color=discord.Color(0x2b2d31))
         embed.title = "Статистика модератора"
