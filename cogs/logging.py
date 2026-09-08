@@ -766,19 +766,23 @@ class Logging(commands.Cog):
             "ban": discord.Color.dark_red(),
             "unban": discord.Color.green(),
             "kick": discord.Color.orange(),
-            "mute": discord.Color.greyple(),
-            "unmute": discord.Color.dark_grey(),
+            "mute": discord.Color.dark_purple(),
+            "unmute": discord.Color.dark_teal(),
             "warn": discord.Color.gold(),
             "unwarn": discord.Color.dark_gold(),
             "blacklist": discord.Color.dark_red(),
             "unblacklist": discord.Color.green(),
         }
         title_map = {
-            "ban": "Бан", "unban": "Разбан",
-            "kick": "Кик",
-            "mute": "Мут", "unmute": "Снятие мута",
-            "warn": "Предупреждение", "unwarn": "Снятие предупреждения",
-            "blacklist": "Чёрный список", "unblacklist": "Снятие с ЧС",
+            "ban": "User Banned",
+            "unban": "User Unbanned",
+            "kick": "User Kicked",
+            "mute": "User Muted",
+            "unmute": "User Unmuted",
+            "warn": "User Warned",
+            "unwarn": "User Unwarned",
+            "blacklist": "User Blacklisted",
+            "unblacklist": "User Unblacklisted",
         }
 
         embed = discord.Embed(title=title_map.get(action, action), color=color_map.get(action, discord.Color.red()), timestamp=datetime.now(timezone.utc))
@@ -791,25 +795,13 @@ class Logging(commands.Cog):
         if guild.banner:
             embed.set_image(url=guild.banner.url)
 
-        # Duration
-        if duration:
-            embed.add_field(name="Длительность", value=duration, inline=False)
-
-        # Кто (исполнитель наказания — бот)
-        bot_user = self.bot.user
-        if bot_user:
-            who_text = f"{bot_user.mention} {bot_user.name} {bot_user.id}"
-        else:
-            who_text = "–"
-        embed.add_field(name="Кто", value=who_text, inline=False)
-
         # User: mention name id
         if hasattr(user, 'mention'):
             user_name = getattr(user, 'name', str(user))
             user_text = f"{user.mention} {user_name} {user.id}"
         else:
             user_text = str(user)
-        embed.add_field(name="Участник", value=user_text, inline=False)
+        embed.add_field(name="User", value=user_text, inline=False)
 
         # Moderator: mention name id
         if moderator:
@@ -817,10 +809,14 @@ class Logging(commands.Cog):
             mod_text = f"{moderator.mention} {mod_name} {moderator.id}"
         else:
             mod_text = "–"
-        embed.add_field(name="Модератор", value=mod_text, inline=False)
+        embed.add_field(name="Moderator", value=mod_text, inline=False)
+
+        # Duration
+        if duration:
+            embed.add_field(name="Duration", value=duration, inline=False)
 
         if reason:
-            embed.add_field(name="Причина", value=reason, inline=False)
+            embed.add_field(name="Reason", value=reason, inline=False)
 
         bot_icon = self.bot.user.display_avatar.url if self.bot.user else discord.Embed.Empty
         embed.set_footer(text="Ayanami System", icon_url=bot_icon)
@@ -837,27 +833,36 @@ class Logging(commands.Cog):
         if not await self.is_event_enabled(interaction.guild.id, "commands"):
             return
         user = interaction.user
-        options_text = "Без параметров"
-        if interaction.data.get("options"):
-            def parse_opts(opts):
-                res = []
-                for opt in opts:
-                    if "value" in opt:
-                        res.append(f"**{opt['name']}**: `{opt['value']}`")
-                    elif "options" in opt:
-                        res.extend(parse_opts(opt["options"]))
-                return res
-            parsed = parse_opts(interaction.data["options"])
-            if parsed:
-                options_text = "\n".join(parsed)
+        user_text = f"{user.mention} {user.name} {user.id}"
 
-        embed = discord.Embed(title="Команда", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
+        embed = discord.Embed(title="Command", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
-        embed.add_field(name="Команда", value=f"`/{command.qualified_name}`", inline=True)
-        embed.add_field(name="Канал", value=interaction.channel.mention, inline=True)
-        embed.add_field(name="Параметры", value=options_text, inline=False)
+        embed.add_field(name="User", value=user_text, inline=False)
+        embed.add_field(name="Command", value=f"`/{command.qualified_name}`", inline=True)
+        embed.add_field(name="Channel", value=interaction.channel.mention, inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(interaction.guild.id, embed)
+
+    @commands.Cog.listener()
+    async def on_command_completion(self, ctx: commands.Context, command):
+        if not ctx.guild:
+            return
+        if not await self.is_event_enabled(ctx.guild.id, "commands"):
+            return
+        user = ctx.author
+        if user.bot:
+            return
+        user_text = f"{user.mention} {user.name} {user.id}"
+        prefix = ctx.prefix or ""
+        command_text = f"`{prefix}{command.qualified_name}`"
+
+        embed = discord.Embed(title="Command", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+        embed.add_field(name="User", value=user_text, inline=False)
+        embed.add_field(name="Command", value=command_text, inline=True)
+        embed.add_field(name="Channel", value=ctx.channel.mention, inline=True)
+        embed.set_footer(text="Ayanami System")
+        await self.send_log(ctx.guild.id, embed)
 
     # ==========================================
     #               АВАТАР / БАННЕР
