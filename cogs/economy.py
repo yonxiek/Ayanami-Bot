@@ -258,5 +258,27 @@ class Economy(commands.Cog):
         embed = discord.Embed(title="Изъятие монеток", description=f"Изъято **{amount}** монеток у: {', '.join(mentions[:15])}", color=Colors.MAIN)
         await interaction.followup.send(embed=embed)
 
+    @commands.command(name="profile")
+    async def profile_prefix(self, ctx, member: discord.Member = None):
+        from prefix_adapter import InteractionAdapter
+        await self.profile(InteractionAdapter(ctx), member)
+
+    @commands.command(name="top")
+    async def top_prefix(self, ctx, tab: str = "coins"):
+        from prefix_adapter import InteractionAdapter
+        await self.top(InteractionAdapter(ctx), tab)
+
+    @commands.command(name="give")
+    @commands.has_permissions(administrator=True)
+    async def give_prefix(self, ctx, amount: int, *, users: str):
+        from prefix_adapter import InteractionAdapter
+        await self.give_slash(InteractionAdapter(ctx), amount, users)
+
+    @commands.command(name="remove")
+    @commands.has_permissions(administrator=True)
+    async def remove_prefix(self, ctx, amount: int, *, users: str):
+        from prefix_adapter import InteractionAdapter
+        await self.remove_slash(InteractionAdapter(ctx), amount, users)
+
 async def setup(bot):
     await bot.add_cog(Economy(bot))

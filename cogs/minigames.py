@@ -331,5 +331,30 @@ class MiniGames(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
+    @commands.command(name="fact")
+    async def fact_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.fact(InteractionAdapter(ctx))
+
+    @commands.command(name="rps")
+    async def rps_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.rps(InteractionAdapter(ctx))
+
+    @commands.command(name="number")
+    async def number_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.number(InteractionAdapter(ctx))
+
+    @commands.command(name="roulette")
+    async def roulette_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.roulette(InteractionAdapter(ctx))
+
+    @commands.command(name="scores")
+    async def scores_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.scores(InteractionAdapter(ctx))
+
 async def setup(bot):
     await bot.add_cog(MiniGames(bot))

@@ -583,7 +583,7 @@ class Utils(commands.Cog):
             fields=fields,
             footer=f"User ID: {member.id} | Reporter ID: {interaction.user.id}"
         )
-        await report_channel.send(embed=embed)
+        await report_channel.send(view=view)
         await interaction.followup.send(f"\u2705 \u0412\u0430\u0448\u0430 \u0436\u0430\u043b\u043e\u0431\u0430 \u043d\u0430 {member.mention} \u0443\u0441\u043f\u0435\u0448\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!", ephemeral=True)
 
     @app_commands.command(name="verify", description="\u0412\u0435\u0440\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f: \u0441\u043c\u0435\u043d\u0430 \u043d\u0438\u043a\u0430 \u0438 \u0432\u044b\u0434\u0430\u0447\u0430 \u0440\u043e\u043b\u0438 Roblox")
@@ -830,7 +830,40 @@ class Utils(commands.Cog):
         )
         await self.db.conn.commit()
 
+    @commands.command(name="whois")
+    async def whois_prefix(self, ctx, member: Optional[discord.Member] = None):
+        from prefix_adapter import InteractionAdapter
+        await self.whois(InteractionAdapter(ctx), member)
 
+    @commands.command(name="roblox")
+    async def roblox_prefix(self, ctx, member: Optional[discord.Member] = None):
+        from prefix_adapter import InteractionAdapter
+        await self.roblox_cmd(InteractionAdapter(ctx), member)
+
+    @commands.command(name="report")
+    async def report_prefix(self, ctx, member: discord.Member, *, reason: str):
+        await self.report_cmd(InteractionAdapter(ctx), member, reason, "")
+
+    @commands.command(name="verify")
+    async def verify_prefix(self, ctx, member: Optional[discord.Member] = None):
+        from prefix_adapter import InteractionAdapter
+        await self.verify(InteractionAdapter(ctx), member)
+
+    @commands.command(name="verifyall")
+    async def verifyall_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.verifyall(InteractionAdapter(ctx))
+
+    @commands.command(name="host")
+    @commands.has_permissions(manage_messages=True)
+    async def host_prefix(self, ctx, event_type: str, duration: str, ping_role: Optional[discord.Role] = None):
+        from prefix_adapter import InteractionAdapter
+        await self.host_cmd(InteractionAdapter(ctx), event_type, duration, ping_role)
+
+    @commands.command(name="applications")
+    async def applications_prefix(self, ctx, app_type: str, duration: str):
+        from prefix_adapter import InteractionAdapter
+        await self.applications(InteractionAdapter(ctx), app_type, duration)
 
 
 class WebhookEmbedModal(ui.Modal, title="Embed конструктор"):
@@ -1064,6 +1097,42 @@ class WebhookCommands(commands.Cog):
                 else:
                     text = await resp.text()
                     await interaction.followup.send(f"❌ Ошибка {resp.status}: `{text[:200]}`", ephemeral=True)
+
+    @commands.command(name="webhook_create")
+    @commands.has_permissions(manage_webhooks=True)
+    async def webhook_create_prefix(self, ctx, channel: discord.TextChannel, name: str = "Ayanami Webhook"):
+        from prefix_adapter import InteractionAdapter
+        await self.webhook_create(InteractionAdapter(ctx), channel, name)
+
+    @commands.command(name="webhook_build")
+    @commands.has_permissions(manage_webhooks=True)
+    async def webhook_build_prefix(self, ctx, webhook_url: str):
+        from prefix_adapter import InteractionAdapter
+        await self.webhook_build(InteractionAdapter(ctx), webhook_url)
+
+    @commands.command(name="webhook_send")
+    @commands.has_permissions(manage_webhooks=True)
+    async def webhook_send_prefix(self, ctx, webhook_url: str, message: str = None, embed_title: str = None, embed_description: str = None, embed_color: str = None):
+        from prefix_adapter import InteractionAdapter
+        await self.webhook_send(InteractionAdapter(ctx), webhook_url, message, embed_title, embed_description, embed_color)
+
+    @commands.command(name="webhook_template")
+    @commands.has_permissions(manage_webhooks=True)
+    async def webhook_template_prefix(self, ctx, template_type: str):
+        from prefix_adapter import InteractionAdapter, make_choice
+        await self.webhook_template(InteractionAdapter(ctx), make_choice(template_type, template_type))
+
+    @commands.command(name="webhook_list")
+    @commands.has_permissions(manage_webhooks=True)
+    async def webhook_list_prefix(self, ctx, channel: discord.TextChannel):
+        from prefix_adapter import InteractionAdapter
+        await self.webhook_list(InteractionAdapter(ctx), channel)
+
+    @commands.command(name="webhook_delete")
+    @commands.has_permissions(manage_webhooks=True)
+    async def webhook_delete_prefix(self, ctx, webhook_url: str):
+        from prefix_adapter import InteractionAdapter
+        await self.webhook_delete(InteractionAdapter(ctx), webhook_url)
 
 
 async def setup(bot):

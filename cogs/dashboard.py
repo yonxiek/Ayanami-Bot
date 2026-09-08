@@ -2640,6 +2640,12 @@ class Dashboard(commands.Cog):
         dashboard_view = DashboardView(self, interaction.guild.id, config, len(quests), len(shop_items))
         await interaction.response.send_message(view=dashboard_view, ephemeral=True)
 
+    @commands.command(name="setup")
+    @commands.has_permissions(administrator=True)
+    async def setup_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.setup_slash(InteractionAdapter(ctx))
+
 
 async def setup(bot):
     await bot.add_cog(Dashboard(bot))

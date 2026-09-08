@@ -236,5 +236,15 @@ class Quests(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 
+    @commands.command(name="quests")
+    async def quests_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.quests(InteractionAdapter(ctx))
+
+    @commands.command(name="daily")
+    async def daily_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.daily(InteractionAdapter(ctx))
+
 async def setup(bot):
     await bot.add_cog(Quests(bot))

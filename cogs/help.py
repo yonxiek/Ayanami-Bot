@@ -128,6 +128,11 @@ class HelpCog(commands.Cog):
         await interaction.response.send_message(embed=all_embed, view=view)
 
 
+    @commands.command(name="help")
+    async def help_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.help_slash(InteractionAdapter(ctx))
+
 async def setup(bot):
     bot.remove_command('help')
     await bot.add_cog(HelpCog(bot))

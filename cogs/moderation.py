@@ -703,6 +703,139 @@ class Moderation(commands.Cog):
         embed.set_footer(text="Ayanami System")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    # ============================================================
+    #            ПРЕФИКСНЫЕ (текстовые) ВЕРСИИ КОМАНД
+    # ============================================================
+
+    @commands.command(name="clear")
+    @commands.has_permissions(manage_messages=True)
+    async def clear_prefix(self, ctx, amount: int):
+        from prefix_adapter import InteractionAdapter
+        await self.clear(InteractionAdapter(ctx), amount)
+
+    @commands.command(name="modstats")
+    async def modstats_prefix(self, ctx, moderator: discord.Member = None):
+        from prefix_adapter import InteractionAdapter
+        await self.modstats(InteractionAdapter(ctx), moderator)
+
+    @commands.command(name="modstatsset")
+    @commands.has_permissions(administrator=True)
+    async def modstats_set_prefix(self, ctx, member: discord.Member, action: str, mode: str, count: int):
+        from prefix_adapter import InteractionAdapter, make_choice
+        await self.modstats_set(InteractionAdapter(ctx), member, action, make_choice(mode), count)
+
+    @commands.command(name="lock")
+    async def lock_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.lock(InteractionAdapter(ctx))
+
+    @commands.command(name="unlock")
+    async def unlock_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.unlock(InteractionAdapter(ctx))
+
+    @commands.command(name="mute")
+    @commands.has_permissions(moderate_members=True)
+    async def mute_prefix(self, ctx, member: discord.Member, duration: str, *, reason: str = "Не указана"):
+        from prefix_adapter import InteractionAdapter
+        await self.mute(InteractionAdapter(ctx), member, duration, reason)
+
+    @commands.command(name="unmute")
+    @commands.has_permissions(moderate_members=True)
+    async def unmute_prefix(self, ctx, member: discord.Member, *, reason: str = "Снято модератором"):
+        from prefix_adapter import InteractionAdapter
+        await self.unmute(InteractionAdapter(ctx), member, reason)
+
+    @commands.command(name="warn")
+    @commands.has_permissions(moderate_members=True)
+    async def warn_prefix(self, ctx, member: discord.Member, *, reason: str = "Не указана"):
+        from prefix_adapter import InteractionAdapter
+        await self.warn(InteractionAdapter(ctx), member, reason)
+
+    @commands.command(name="warns")
+    async def warns_prefix(self, ctx, member: discord.Member = None):
+        from prefix_adapter import InteractionAdapter
+        await self.warns(InteractionAdapter(ctx), member)
+
+    @commands.command(name="kick")
+    @commands.has_permissions(kick_members=True)
+    async def kick_prefix(self, ctx, member: discord.Member, *, reason: str = "Не указана"):
+        from prefix_adapter import InteractionAdapter
+        await self.kick(InteractionAdapter(ctx), member, reason)
+
+    @commands.command(name="ban")
+    @commands.has_permissions(ban_members=True)
+    async def ban_prefix(self, ctx, member, *, reason: str = "Не указана"):
+        from prefix_adapter import InteractionAdapter
+        try:
+            m = await commands.UserConverter().convert(ctx, member)
+        except commands.BadArgument:
+            try:
+                m = await commands.MemberConverter().convert(ctx, member)
+            except commands.BadArgument:
+                return await ctx.send("❌ Участник или ID не найден.")
+        await self.ban(InteractionAdapter(ctx), m, reason)
+
+    @commands.command(name="unban")
+    @commands.has_permissions(ban_members=True)
+    async def unban_prefix(self, ctx, member, *, reason: str = "Не указана"):
+        from prefix_adapter import InteractionAdapter
+        try:
+            m = await commands.UserConverter().convert(ctx, member)
+        except commands.BadArgument:
+            return await ctx.send("❌ Пользователь или ID не найден.")
+        await self.unban(InteractionAdapter(ctx), m, reason)
+
+    @commands.command(name="blacklist")
+    @commands.has_permissions(manage_roles=True)
+    async def blacklist_prefix(self, ctx, user, *, reason: str = "Нарушение правил"):
+        from prefix_adapter import InteractionAdapter
+        try:
+            u = await commands.UserConverter().convert(ctx, user)
+        except commands.BadArgument:
+            try:
+                u = await commands.MemberConverter().convert(ctx, user)
+            except commands.BadArgument:
+                return await ctx.send("❌ Участник или ID не найден.")
+        await self.blacklist(InteractionAdapter(ctx), u, reason)
+
+    @commands.command(name="unblacklist")
+    @commands.has_permissions(manage_roles=True)
+    async def unblacklist_prefix(self, ctx, user):
+        from prefix_adapter import InteractionAdapter
+        try:
+            u = await commands.UserConverter().convert(ctx, user)
+        except commands.BadArgument:
+            try:
+                u = await commands.MemberConverter().convert(ctx, user)
+            except commands.BadArgument:
+                return await ctx.send("❌ Участник или ID не найден.")
+        await self.unblacklist(InteractionAdapter(ctx), u)
+
+    @commands.command(name="promote")
+    @commands.has_permissions(administrator=True)
+    async def promote_prefix(self, ctx, member: discord.Member, role: discord.Role):
+        from prefix_adapter import InteractionAdapter
+        await self.promote(InteractionAdapter(ctx), member, role)
+
+    @commands.command(name="demote")
+    @commands.has_permissions(administrator=True)
+    async def demote_prefix(self, ctx, member: discord.Member, role: discord.Role):
+        from prefix_adapter import InteractionAdapter
+        await self.demote(InteractionAdapter(ctx), member, role)
+
+    @commands.command(name="modnote")
+    @commands.has_permissions(moderate_members=True)
+    async def modnote_prefix(self, ctx, member: discord.Member, *, note: str):
+        from prefix_adapter import InteractionAdapter
+        await self.modnote(InteractionAdapter(ctx), member, note)
+
+    @commands.command(name="history")
+    @commands.has_permissions(moderate_members=True)
+    async def history_prefix(self, ctx, member: discord.Member):
+        from prefix_adapter import InteractionAdapter
+        await self.history(InteractionAdapter(ctx), member)
+
 
 async def setup(bot):
     await bot.add_cog(Moderation(bot))
