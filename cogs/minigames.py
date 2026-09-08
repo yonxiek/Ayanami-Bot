@@ -334,27 +334,27 @@ class MiniGames(commands.Cog):
     @commands.command(name="fact")
     async def fact_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.fact(InteractionAdapter(ctx))
+        await self.fact.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="rps")
     async def rps_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.rps(InteractionAdapter(ctx))
+        await self.rps.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="number")
     async def number_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.number(InteractionAdapter(ctx))
+        await self.number.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="roulette")
     async def roulette_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.roulette(InteractionAdapter(ctx))
+        await self.roulette.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="scores")
     async def scores_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.scores(InteractionAdapter(ctx))
+        await self.scores.callback(self, InteractionAdapter(ctx))
 
 async def setup(bot):
     await bot.add_cog(MiniGames(bot))

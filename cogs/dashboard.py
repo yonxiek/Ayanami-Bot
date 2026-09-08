@@ -2644,7 +2644,7 @@ class Dashboard(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def setup_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.setup_slash(InteractionAdapter(ctx))
+        await self.setup_slash.callback(self, InteractionAdapter(ctx))
 
 
 async def setup(bot):

@@ -239,12 +239,12 @@ class Quests(commands.Cog):
     @commands.command(name="quests")
     async def quests_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.quests(InteractionAdapter(ctx))
+        await self.quests.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="daily")
     async def daily_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.daily(InteractionAdapter(ctx))
+        await self.daily.callback(self, InteractionAdapter(ctx))
 
 async def setup(bot):
     await bot.add_cog(Quests(bot))

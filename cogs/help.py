@@ -131,7 +131,7 @@ class HelpCog(commands.Cog):
     @commands.command(name="help")
     async def help_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.help_slash(InteractionAdapter(ctx))
+        await self.help_slash.callback(self, InteractionAdapter(ctx))
 
 async def setup(bot):
     bot.remove_command('help')

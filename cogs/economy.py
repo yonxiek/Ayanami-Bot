@@ -261,24 +261,24 @@ class Economy(commands.Cog):
     @commands.command(name="profile")
     async def profile_prefix(self, ctx, member: discord.Member = None):
         from prefix_adapter import InteractionAdapter
-        await self.profile(InteractionAdapter(ctx), member)
+        await self.profile.callback(self, InteractionAdapter(ctx), member)
 
     @commands.command(name="top")
     async def top_prefix(self, ctx, tab: str = "coins"):
         from prefix_adapter import InteractionAdapter
-        await self.top(InteractionAdapter(ctx), tab)
+        await self.top.callback(self, InteractionAdapter(ctx), tab)
 
     @commands.command(name="give")
     @commands.has_permissions(administrator=True)
     async def give_prefix(self, ctx, amount: int, *, users: str):
         from prefix_adapter import InteractionAdapter
-        await self.give_slash(InteractionAdapter(ctx), amount, users)
+        await self.give_slash.callback(self, InteractionAdapter(ctx), amount, users)
 
     @commands.command(name="remove")
     @commands.has_permissions(administrator=True)
     async def remove_prefix(self, ctx, amount: int, *, users: str):
         from prefix_adapter import InteractionAdapter
-        await self.remove_slash(InteractionAdapter(ctx), amount, users)
+        await self.remove_slash.callback(self, InteractionAdapter(ctx), amount, users)
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))

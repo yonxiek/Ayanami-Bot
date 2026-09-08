@@ -286,17 +286,17 @@ class Shop(commands.Cog):
     @commands.command(name="shop")
     async def shop_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
-        await self.shop(InteractionAdapter(ctx))
+        await self.shop.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="buy")
     async def buy_prefix(self, ctx, item_id: str):
         from prefix_adapter import InteractionAdapter
-        await self.buy(InteractionAdapter(ctx), item_id)
+        await self.buy.callback(self, InteractionAdapter(ctx), item_id)
 
     @commands.command(name="inventory")
     async def inventory_prefix(self, ctx, member: discord.Member = None):
         from prefix_adapter import InteractionAdapter
-        await self.inventory(InteractionAdapter(ctx), member)
+        await self.inventory.callback(self, InteractionAdapter(ctx), member)
 
 async def setup(bot):
     await bot.add_cog(Shop(bot))
