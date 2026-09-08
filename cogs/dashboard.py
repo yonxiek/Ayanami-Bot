@@ -681,8 +681,11 @@ class SetupModerationView(discord.ui.View):
 
     @discord.ui.button(label="Назад", emoji="⬅️", style=discord.ButtonStyle.grey, row=1)
     async def btn_back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from cogs.dashboard import SetupView
-        view = SetupView(self.cog, self.guild_id)
+        db = Database()
+        config = await db.get_guild_config(str(self.guild_id))
+        quests = await db.get_guild_quests(str(self.guild_id))
+        shop_items = await db.get_shop_items(str(self.guild_id))
+        view = DashboardView(self.cog, self.guild_id, config, len(quests), len(shop_items))
         await interaction.response.edit_message(view=view)
 
 
