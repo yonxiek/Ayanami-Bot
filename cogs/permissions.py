@@ -109,7 +109,15 @@ class Permissions(commands.Cog):
         }
 
     async def cog_load(self):
-        self.bot.tree.add_check(self.slash_check)
+        prev_check = self.bot.tree.interaction_check
+
+        async def combined_check(interaction: discord.Interaction) -> bool:
+            if prev_check is not None:
+                if not await prev_check(interaction):
+                    return False
+            return await self.slash_check(interaction)
+
+        self.bot.tree.interaction_check = combined_check
         self.bot.add_check(self.prefix_check)
 
     async def get_perms(self, guild_id: int) -> dict:
