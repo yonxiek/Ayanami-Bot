@@ -110,7 +110,7 @@ async def check_modules_slash(interaction: discord.Interaction) -> bool:
         return False
     return True
 
-bot.tree.interaction_check = check_modules_slash
+bot.tree.add_check(check_modules_slash)
 
 
 @bot.tree.error

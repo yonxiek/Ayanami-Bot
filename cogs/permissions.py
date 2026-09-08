@@ -109,7 +109,8 @@ class Permissions(commands.Cog):
         }
 
     async def cog_load(self):
-        self.bot.tree.interaction_check = self.slash_check
+        self.bot.tree.add_check(self.slash_check)
+        self.bot.add_check(self.prefix_check)
 
     async def get_perms(self, guild_id: int) -> dict:
         config = await self.db.get_guild_config(str(guild_id))
@@ -150,6 +151,45 @@ class Permissions(commands.Cog):
         if allowed and not any(rid in allowed for rid in u_roles):
             embed = discord.Embed(title="Ошибка", description="> Эта команда доступна только определенным ролям.", color=Colors.MAIN)
             await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+        return True
+
+    async def prefix_check(self, ctx: commands.Context) -> bool:
+        if not ctx.guild or not ctx.command:
+            return True
+        if ctx.author.id == ctx.guild.owner_id or ctx.author.guild_permissions.administrator:
+            return True
+        prefix_name = ctx.command.name
+        slash_key = None
+        for cmd in self.bot.tree.walk_commands():
+            if isinstance(cmd, app_commands.Command):
+                if cmd.qualified_name == prefix_name or cmd.qualified_name.replace(' ', '_') == prefix_name:
+                    slash_key = cmd.qualified_name
+                    break
+        if slash_key is None:
+            return True
+        config = await self.db.get_guild_config(str(ctx.guild.id))
+        private_cmds = config.get("private_commands", {})
+        if slash_key in private_cmds:
+            allowed_role_ids = private_cmds[slash_key]
+            user_role_ids = [str(r.id) for r in ctx.author.roles]
+            if not any(rid in allowed_role_ids for rid in user_role_ids):
+                embed = discord.Embed(title="Ошибка", description="> Эта команда вам недоступна.", color=Colors.MAIN)
+                await ctx.send(embed=embed)
+                return False
+        perms = config.get('permissions', {"commands": {}})
+        rules = perms.get("commands", {}).get(slash_key)
+        if not rules:
+            return True
+        u_roles = [str(r.id) for r in ctx.author.roles]
+        if any(rid in rules.get('denied_roles', []) for rid in u_roles):
+            embed = discord.Embed(title="Ошибка", description="> У вашей роли нет доступа к этой команде.", color=Colors.MAIN)
+            await ctx.send(embed=embed)
+            return False
+        allowed = rules.get('allowed_roles', [])
+        if allowed and not any(rid in allowed for rid in u_roles):
+            embed = discord.Embed(title="Ошибка", description="> Эта команда доступна только определенным ролям.", color=Colors.MAIN)
+            await ctx.send(embed=embed)
             return False
         return True
 

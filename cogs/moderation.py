@@ -102,9 +102,11 @@ class Moderation(commands.Cog):
             if count > 0:
                 desc += f"> **{label}:** `{count}`\n"
                 total += count
-        
+
         if not desc:
             desc = "*Действий еще не совершено*"
+        else:
+            desc += f"> **Всего:** `{total}`"
 
         embed = discord.Embed(color=discord.Color(0x2b2d31))
         embed.title = "Статистика модератора"
@@ -112,11 +114,9 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = "–"
-        user_line = f"{target.mention} {target.name} {target.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
-        embed.add_field(name="Участник", value=user_line, inline=False)
-        embed.add_field(name="Причина", value=f"Всего действий: {total}", inline=False)
+        embed.add_field(name="Действия", value=desc, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
         await interaction.response.send_message(embed=embed)
 
@@ -156,6 +156,22 @@ class Moderation(commands.Cog):
             embed.add_field(name=name, value=value, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_punishment_notice(self, member, action: str, reason: str, guild: discord.Guild):
+        try:
+            embed = discord.Embed(color=discord.Color(0x2b2d31))
+            embed.set_author(name="Модерация сервера", icon_url=self.bot.user.display_avatar.url)
+            if guild.icon:
+                embed.set_thumbnail(url=guild.icon.url)
+            embed.add_field(name="Действие", value=f"Вы были **{action}**", inline=False)
+            embed.add_field(name="Сервер", value=guild.name, inline=False)
+            embed.add_field(name="Причина", value=reason or "Не указана", inline=False)
+            embed.set_footer(text="Ayanami System")
+            await member.send(embed=embed)
+        except discord.HTTPException:
+            pass
+        except Exception:
+            pass
 
     @app_commands.command(name="lock", description="Закрыть канал")
     async def lock(self, interaction: discord.Interaction):
@@ -223,6 +239,7 @@ class Moderation(commands.Cog):
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
         
+            await self.send_punishment_notice(member, "замучены (тайм-аут)", reason, interaction.guild)
             await interaction.followup.send(embed=embed)
 
         except discord.Forbidden:
@@ -323,6 +340,7 @@ class Moderation(commands.Cog):
             embed.add_field(name=name, value=value, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await self.send_punishment_notice(member, "предупреждены", reason, interaction.guild)
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="warns", description="Посмотреть список предупреждений участника")
@@ -379,6 +397,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Причина", value=reason, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
         
+        await self.send_punishment_notice(member, "кикнуты", reason, interaction.guild)
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="ban", description="Забанить участника (или ID, если его нет на сервере)")
@@ -400,6 +419,7 @@ class Moderation(commands.Cog):
             embed.add_field(name="Участник", value=user_line, inline=False)
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+            await self.send_punishment_notice(member, "забанены", reason, interaction.guild)
             await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="unban", description="Разбанить участника")
@@ -507,6 +527,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await self.send_punishment_notice(user, "внесены в Чёрный список", reason, interaction.guild)
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="unblacklist", description="Удалить участника из Чёрного списка")
