@@ -1,0 +1,24 @@
+# Секретные файлы и токены
+.env
+.env.*
+!.env.example
+
+# Локальная база данных SQLite
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Кэш Python и виртуальное окружение
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Логи работы приложения
+*.log
+
+ssh/
+ssh
+*.key
+.ssh/

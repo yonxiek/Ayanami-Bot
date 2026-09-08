@@ -1,0 +1,868 @@
+import aiosqlite
+import json
+from datetime import datetime, timezone
+from typing import Optional, Dict
+
+class Database:
+    _instance = None
+
+    def __new__(cls, db_path="data/bot.db"):
+        if not cls._instance:
+            cls._instance = super(Database, cls).__new__(cls)
+            cls._instance.db_path = db_path
+            cls._instance.conn = None
+        return cls._instance
+
+    async def connect(self):
+        if not self.conn:
+            self.conn = await aiosqlite.connect(self.db_path, timeout=30)
+            self.conn.row_factory = aiosqlite.Row
+            await self.conn.execute('PRAGMA journal_mode=WAL;')
+            await self.conn.execute('PRAGMA synchronous=NORMAL;')
+            await self.conn.commit()
+
+    async def init_db(self):
+        await self.connect()
+        tables = [
+            '''CREATE TABLE IF NOT EXISTS users (
+                guild_id TEXT, user_id TEXT, balance INTEGER DEFAULT 0,
+                joined_at TIMESTAMP, exp INTEGER DEFAULT 0, level INTEGER DEFAULT 1,
+                total_messages INTEGER DEFAULT 0, total_voice_minutes INTEGER DEFAULT 0,
+                total_commands INTEGER DEFAULT 0, reputation INTEGER DEFAULT 0, 
+                roblox_nick TEXT DEFAULT 'Не указан', raids_attended INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id))''',
+            '''CREATE TABLE IF NOT EXISTS guild_config (guild_id TEXT PRIMARY KEY, config TEXT NOT NULL)''',
+            '''CREATE TABLE IF NOT EXISTS mod_stats (guild_id TEXT, moderator_id TEXT, action_type TEXT, count INTEGER DEFAULT 0, PRIMARY KEY (guild_id, moderator_id, action_type))''',
+            '''CREATE TABLE IF NOT EXISTS warns (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, reason TEXT, timestamp TEXT)''',
+            '''CREATE TABLE IF NOT EXISTS mod_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, note TEXT, timestamp TEXT)''',
+            '''CREATE TABLE IF NOT EXISTS level_roles (guild_id TEXT, level INTEGER, role_id TEXT, PRIMARY KEY (guild_id, level))''',
+            '''CREATE TABLE IF NOT EXISTS bounties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, creator_id TEXT, 
+                target TEXT, reward INTEGER, channel_id TEXT, message_id TEXT, status TEXT DEFAULT 'active'
+            )''',
+            '''CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, host_id TEXT, 
+                type TEXT, start_time TIMESTAMP, channel_id TEXT, message_id TEXT, 
+                attendees TEXT DEFAULT '[]', pinged INTEGER DEFAULT 0
+            )''',
+            '''CREATE TABLE IF NOT EXISTS raid_attendance (
+                raid_msg_id TEXT, user_id TEXT, 
+                PRIMARY KEY (raid_msg_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                end_time TIMESTAMP,
+                task_type TEXT,
+                metadata TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS raids_v3 (
+                message_id TEXT PRIMARY KEY,
+                channel_id TEXT,
+                target_channel_id TEXT,
+                link TEXT,
+                enemies TEXT,
+                alliance TEXT,
+                ping_role_id TEXT,
+                queue_data TEXT DEFAULT '[]',
+                status TEXT DEFAULT 'started',
+                created_at TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS security_warnings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                reason TEXT,
+                issued_at TIMESTAMP,
+                expires_at TIMESTAMP,
+                active INTEGER DEFAULT 1
+            )''',
+            '''CREATE TABLE IF NOT EXISTS game_scores (
+                guild_id TEXT,
+                user_id TEXT,
+                wins INTEGER DEFAULT 0,
+                total INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS daily_quests (
+                guild_id TEXT,
+                quest_id TEXT,
+                name TEXT,
+                description TEXT,
+                quest_type TEXT,
+                target INTEGER,
+                reward INTEGER,
+                reset_hour INTEGER DEFAULT 0,
+                enabled INTEGER DEFAULT 1,
+                PRIMARY KEY (guild_id, quest_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS user_quests (
+                guild_id TEXT,
+                user_id TEXT,
+                quest_id TEXT,
+                progress INTEGER DEFAULT 0,
+                completed INTEGER DEFAULT 0,
+                claimed INTEGER DEFAULT 0,
+                last_reset TEXT,
+                PRIMARY KEY (guild_id, user_id, quest_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS shop_items (
+                guild_id TEXT,
+                item_id TEXT,
+                name TEXT,
+                description TEXT,
+                price INTEGER,
+                item_type TEXT,
+                role_id TEXT,
+                metadata TEXT DEFAULT '{}',
+                stock INTEGER DEFAULT -1,
+                enabled INTEGER DEFAULT 1,
+                PRIMARY KEY (guild_id, item_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS user_inventory (
+                guild_id TEXT,
+                user_id TEXT,
+                item_id TEXT,
+                quantity INTEGER DEFAULT 1,
+                purchased_at TEXT,
+                PRIMARY KEY (guild_id, user_id, item_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS user_titles (
+                guild_id TEXT,
+                user_id TEXT,
+                title TEXT,
+                emoji TEXT DEFAULT '🏷️',
+                active INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id, title)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS user_activities (
+                guild_id TEXT,
+                user_id TEXT,
+                activity_type TEXT,
+                amount INTEGER DEFAULT 0,
+                last_updated TEXT,
+                PRIMARY KEY (guild_id, user_id, activity_type)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS daily_rewards (
+                guild_id TEXT,
+                user_id TEXT,
+                last_claim TEXT,
+                streak INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS random_quest_pool (
+                guild_id TEXT,
+                pool_id TEXT,
+                name TEXT,
+                description TEXT,
+                quest_type TEXT,
+                target INTEGER,
+                reward INTEGER,
+                weight INTEGER DEFAULT 1,
+                enabled INTEGER DEFAULT 1,
+                PRIMARY KEY (guild_id, pool_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS random_quest_config (
+                guild_id TEXT PRIMARY KEY,
+                count INTEGER DEFAULT 3,
+                interval_hours INTEGER DEFAULT 6,
+                last_rotation TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS temporary_roles (
+                guild_id TEXT,
+                user_id TEXT,
+                role_id TEXT,
+                expires_at TEXT,
+                PRIMARY KEY (guild_id, user_id, role_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS xp_boosts (
+                guild_id TEXT,
+                user_id TEXT,
+                multiplier REAL DEFAULT 1.5,
+                expires_at TEXT,
+                PRIMARY KEY (guild_id, user_id)
+            )'''
+        ]
+        
+        for table in tables:
+            await self.conn.execute(table)
+            
+        try:
+            await self.conn.execute('ALTER TABLE users ADD COLUMN roblox_nick TEXT DEFAULT "Не указан"')
+            await self.conn.execute('ALTER TABLE users ADD COLUMN raids_attended INTEGER DEFAULT 0')
+        except Exception:
+            pass
+
+        migration_columns = [
+            ('shop_items', 'item_id', 'TEXT'),
+            ('shop_items', 'name', 'TEXT'),
+            ('shop_items', 'description', 'TEXT'),
+            ('shop_items', 'price', 'INTEGER'),
+            ('shop_items', 'item_type', 'TEXT'),
+            ('shop_items', 'role_id', 'TEXT'),
+            ('shop_items', 'metadata', "TEXT DEFAULT '{}'"),
+            ('shop_items', 'stock', 'INTEGER DEFAULT -1'),
+            ('shop_items', 'enabled', 'INTEGER DEFAULT 1'),
+            ('user_inventory', 'quantity', 'INTEGER DEFAULT 1'),
+            ('user_inventory', 'purchased_at', 'TEXT'),
+            ('user_titles', 'emoji', "TEXT DEFAULT '🏷️'"),
+            ('user_titles', 'active', 'INTEGER DEFAULT 0'),
+            ('user_activities', 'amount', 'INTEGER DEFAULT 0'),
+            ('user_activities', 'last_updated', 'TEXT'),
+            ('daily_rewards', 'last_claim', 'TEXT'),
+            ('daily_rewards', 'streak', 'INTEGER DEFAULT 0'),
+            ('daily_quests', 'is_random', 'INTEGER DEFAULT 0'),
+            ('users', 'last_xp_time', 'TEXT'),
+        ]
+
+        try:
+            cursor = await self.conn.execute("PRAGMA table_info(shop_items)")
+            cols = [row[1] for row in await cursor.fetchall()]
+            if 'item_id' not in cols:
+                await self.conn.execute('DROP TABLE IF EXISTS shop_items')
+                await self.conn.execute('''CREATE TABLE IF NOT EXISTS shop_items (
+                    guild_id TEXT,
+                    item_id TEXT,
+                    name TEXT,
+                    description TEXT,
+                    price INTEGER,
+                    item_type TEXT,
+                    role_id TEXT,
+                    metadata TEXT DEFAULT '{}',
+                    stock INTEGER DEFAULT -1,
+                    enabled INTEGER DEFAULT 1,
+                    PRIMARY KEY (guild_id, item_id)
+                )''')
+        except Exception:
+            pass
+
+        for table, column, col_type in migration_columns:
+            try:
+                await self.conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}')
+            except Exception:
+                pass 
+            
+        await self.conn.commit()
+
+    async def mark_raid_attendance(self, guild_id: str, user_id: str, raid_msg_id: str) -> bool:
+        """Пытается засчитать рейд участнику. Возвращает True, если очко выдано, False - если уже было."""
+        try:
+            await self.conn.execute('INSERT INTO raid_attendance (raid_msg_id, user_id) VALUES (?, ?)', (raid_msg_id, user_id))
+            await self.create_user(guild_id, user_id)
+            await self.conn.execute('UPDATE users SET raids_attended = raids_attended + 1 WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+            await self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    async def create_user(self, guild_id: str, user_id: str):
+        await self.conn.execute('INSERT OR IGNORE INTO users (guild_id, user_id, joined_at) VALUES (?, ?, ?)',
+                                (guild_id, user_id, datetime.now(timezone.utc).isoformat()))
+        await self.conn.commit()
+
+    async def get_or_create_user(self, guild_id: str, user_id: str) -> dict:
+        await self.create_user(guild_id, user_id)
+        cursor = await self.conn.execute('SELECT * FROM users WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
+
+    async def update_user_balance(self, guild_id: str, user_id: str, amount: int):
+        await self.create_user(guild_id, user_id)
+        await self.conn.execute('UPDATE users SET balance = balance + ? WHERE guild_id = ? AND user_id = ?', (amount, guild_id, user_id))
+        await self.conn.commit()
+
+    async def get_top_users(self, guild_id: str, limit: int = 10) -> list:
+        cursor = await self.conn.execute('SELECT user_id, balance FROM users WHERE guild_id = ? ORDER BY balance DESC LIMIT ?', (guild_id, limit))
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def increment_mod_stat(self, guild_id: str, moderator_id: str, action_type: str, amount: int = 1):
+        await self.conn.execute('''
+            INSERT INTO mod_stats (guild_id, moderator_id, action_type, count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, moderator_id, action_type) 
+            DO UPDATE SET count = count + ?
+        ''', (guild_id, moderator_id, action_type, amount, amount))
+        await self.conn.commit()
+
+    async def get_mod_stats(self, guild_id: str, moderator_id: str) -> Dict[str, int]:
+        try:
+            cursor = await self.conn.execute('SELECT action_type, count FROM mod_stats WHERE guild_id = ? AND moderator_id = ?', (guild_id, moderator_id))
+            rows = await cursor.fetchall()
+            return {row['action_type']: row['count'] for row in rows}
+        except: return {}
+
+    async def get_guild_config(self, guild_id: str) -> dict:
+        try:
+            cursor = await self.conn.execute('SELECT config FROM guild_config WHERE guild_id = ?', (guild_id,))
+            row = await cursor.fetchone()
+            return json.loads(row['config']) if row else {}
+        except: return {}
+
+    async def update_guild_config(self, guild_id: str, **kwargs):
+        config = await self.get_guild_config(guild_id)
+        config.update(kwargs)
+        await self.conn.execute('INSERT OR REPLACE INTO guild_config (guild_id, config) VALUES (?, ?)',
+                                (guild_id, json.dumps(config, ensure_ascii=False)))
+        await self.conn.commit()
+
+    async def update_config_field(self, guild_id: str, key: str, value):
+        config = await self.get_guild_config(guild_id)
+        config[key] = value
+        await self.conn.execute('INSERT OR REPLACE INTO guild_config (guild_id, config) VALUES (?, ?)',
+                                (guild_id, json.dumps(config, ensure_ascii=False)))
+        await self.conn.commit()
+
+    async def update_user_stats(self, guild_id: str, user_id: str, **kwargs):
+        if not kwargs: return
+        set_clause = ", ".join(f"{k} = ?" for k in kwargs.keys())
+        await self.conn.execute(f"UPDATE users SET {set_clause} WHERE guild_id = ? AND user_id = ?", list(kwargs.values()) + [guild_id, user_id])
+        await self.conn.commit()
+
+    # ==========================================
+    #     SECURITY WARNINGS
+    # ==========================================
+
+    async def add_security_warning(self, guild_id: str, user_id: str, reason: str, expires_in_hours: int = 24):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(hours=expires_in_hours)
+        await self.conn.execute(
+            'INSERT INTO security_warnings (guild_id, user_id, reason, issued_at, expires_at, active) VALUES (?, ?, ?, ?, ?, 1)',
+            (guild_id, user_id, reason, now.isoformat(), expires.isoformat())
+        )
+        await self.conn.commit()
+
+    async def get_active_warnings(self, guild_id: str, user_id: str) -> int:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) FROM security_warnings WHERE guild_id = ? AND user_id = ? AND active = 1 AND expires_at > ?',
+            (guild_id, user_id, now)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+    async def expire_old_warnings(self):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        await self.conn.execute(
+            'UPDATE security_warnings SET active = 0 WHERE active = 1 AND expires_at <= ?',
+            (now,)
+        )
+        await self.conn.commit()
+
+    async def clear_user_warnings(self, guild_id: str, user_id: str):
+        await self.conn.execute(
+            'UPDATE security_warnings SET active = 0 WHERE guild_id = ? AND user_id = ? AND active = 1',
+            (guild_id, user_id)
+        )
+        await self.conn.commit()
+
+    async def get_warning_history(self, guild_id: str, user_id: str, limit: int = 10):
+        cursor = await self.db.conn.execute(
+            'SELECT id, reason, issued_at, expires_at, active FROM security_warnings WHERE guild_id = ? AND user_id = ? ORDER BY issued_at DESC LIMIT ?',
+            (guild_id, user_id, limit)
+        )
+        return await cursor.fetchall()
+
+    # ==========================================
+    #     DAILY QUESTS
+    # ==========================================
+
+    async def create_quest(self, guild_id: str, quest_id: str, name: str, description: str,
+                           quest_type: str, target: int, reward: int, reset_hour: int = 0):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO daily_quests (guild_id, quest_id, name, description, quest_type, target, reward, reset_hour) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (guild_id, quest_id, name, description, quest_type, target, reward, reset_hour)
+        )
+        await self.conn.commit()
+
+    async def delete_quest(self, guild_id: str, quest_id: str):
+        await self.conn.execute('DELETE FROM daily_quests WHERE guild_id = ? AND quest_id = ?', (guild_id, quest_id))
+        await self.conn.commit()
+
+    async def get_guild_quests(self, guild_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT quest_id, name, description, quest_type, target, reward, reset_hour, enabled FROM daily_quests WHERE guild_id = ?',
+            (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_user_quest_progress(self, guild_id: str, user_id: str, quest_id: str) -> dict:
+        cursor = await self.conn.execute(
+            'SELECT progress, completed, claimed, last_reset FROM user_quests WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+            (guild_id, user_id, quest_id)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_quest_progress(self, guild_id: str, user_id: str, quest_id: str, amount: int = 1):
+        await self.conn.execute('''
+            INSERT INTO user_quests (guild_id, user_id, quest_id, progress, completed, claimed, last_reset)
+            VALUES (?, ?, ?, ?, 0, 0, ?)
+            ON CONFLICT(guild_id, user_id, quest_id) DO UPDATE SET progress = progress + ?
+        ''', (guild_id, user_id, quest_id, amount, datetime.now(timezone.utc).isoformat(), amount))
+        await self.conn.commit()
+
+    async def claim_quest_reward(self, guild_id: str, user_id: str, quest_id: str) -> bool:
+        cursor = await self.conn.execute(
+            'SELECT completed, claimed FROM user_quests WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+            (guild_id, user_id, quest_id)
+        )
+        row = await cursor.fetchone()
+        if not row or not row['completed'] or row['claimed']:
+            return False
+        await self.conn.execute(
+            'UPDATE user_quests SET claimed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+            (guild_id, user_id, quest_id)
+        )
+        await self.conn.commit()
+        return True
+
+    async def complete_quest(self, guild_id: str, user_id: str, quest_id: str):
+        await self.conn.execute(
+            'UPDATE user_quests SET completed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+            (guild_id, user_id, quest_id)
+        )
+        await self.conn.commit()
+
+    async def reset_daily_quests(self, guild_id: str):
+        await self.conn.execute(
+            'UPDATE user_quests SET progress = 0, completed = 0, claimed = 0, last_reset = ? WHERE guild_id = ?',
+            (datetime.now(timezone.utc).isoformat(), guild_id)
+        )
+        await self.conn.commit()
+
+    async def increment_quest_progress(self, guild_id: str, user_id: str, quest_type: str, amount: int = 1) -> list:
+        cursor = await self.conn.execute(
+            'SELECT q.quest_id, q.target, q.reward, q.name FROM daily_quests q '
+            'LEFT JOIN user_quests uq ON q.quest_id = uq.quest_id AND q.guild_id = uq.guild_id AND uq.user_id = ? '
+            'WHERE q.guild_id = ? AND q.quest_type = ? AND q.enabled = 1',
+            (user_id, guild_id, quest_type)
+        )
+        rows = await cursor.fetchall()
+        completed_quests = []
+        for row in rows:
+            quest_id = row['quest_id']
+            target = row['target']
+            user_quest = await self.get_user_quest_progress(guild_id, user_id, quest_id)
+            if user_quest and not user_quest['completed']:
+                new_progress = user_quest['progress'] + amount
+                if new_progress >= target:
+                    await self.complete_quest(guild_id, user_id, quest_id)
+                    await self.update_user_balance(guild_id, user_id, row['reward'])
+                    await self.conn.execute(
+                        'UPDATE user_quests SET claimed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+                        (guild_id, user_id, quest_id)
+                    )
+                    await self.conn.commit()
+                    completed_quests.append({
+                        'quest_id': quest_id,
+                        'name': row['name'],
+                        'reward': row['reward'],
+                    })
+                else:
+                    await self.conn.execute(
+                        'UPDATE user_quests SET progress = ? WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+                        (new_progress, guild_id, user_id, quest_id)
+                    )
+                    await self.conn.commit()
+        return completed_quests
+
+    # ==========================================
+    #     RANDOM QUEST POOL
+    # ==========================================
+
+    async def get_random_quest_pool(self, guild_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT * FROM random_quest_pool WHERE guild_id = ? AND enabled = 1',
+            (guild_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def add_random_quest(self, guild_id: str, pool_id: str, name: str, description: str,
+                               quest_type: str, target: int, reward: int, weight: int = 1):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO random_quest_pool (guild_id, pool_id, name, description, quest_type, target, reward, weight, enabled) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
+            (guild_id, pool_id, name, description, quest_type, target, reward, weight)
+        )
+        await self.conn.commit()
+
+    async def remove_random_quest(self, guild_id: str, pool_id: str):
+        await self.conn.execute(
+            'DELETE FROM random_quest_pool WHERE guild_id = ? AND pool_id = ?',
+            (guild_id, pool_id)
+        )
+        await self.conn.commit()
+
+    async def get_random_quest_config(self, guild_id: str) -> dict:
+        cursor = await self.conn.execute(
+            'SELECT * FROM random_quest_config WHERE guild_id = ?',
+            (guild_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await self.conn.execute(
+                'INSERT OR IGNORE INTO random_quest_config (guild_id) VALUES (?)',
+                (guild_id,)
+            )
+            await self.conn.commit()
+            return {'guild_id': guild_id, 'count': 3, 'interval_hours': 6, 'last_rotation': None}
+        return dict(row)
+
+    async def update_random_quest_config(self, guild_id: str, **kwargs):
+        await self.get_random_quest_config(guild_id)
+        for key, value in kwargs.items():
+            await self.conn.execute(
+                f'UPDATE random_quest_config SET {key} = ? WHERE guild_id = ?',
+                (value, guild_id)
+            )
+        await self.conn.commit()
+
+    async def rotate_random_quests(self, guild_id: str) -> list:
+        import random as rnd
+        config = await self.get_random_quest_config(guild_id)
+        pool = await self.get_random_quest_pool(guild_id)
+        if not pool:
+            return []
+
+        await self.conn.execute(
+            'DELETE FROM daily_quests WHERE guild_id = ? AND is_random = 1',
+            (guild_id,)
+        )
+
+        count = min(config['count'], len(pool))
+        weights = [item['weight'] for item in pool]
+        selected = rnd.choices(pool, weights=weights, k=count)
+
+        now = datetime.now(timezone.utc).isoformat()
+        new_quests = []
+        for item in selected:
+            await self.conn.execute(
+                'INSERT OR REPLACE INTO daily_quests '
+                '(guild_id, quest_id, name, description, quest_type, target, reward, enabled, is_random) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)',
+                (guild_id, f"random_{item['pool_id']}_{int(now)}", item['name'], item['description'],
+                 item['quest_type'], item['target'], item['reward'])
+            )
+            new_quests.append(item['name'])
+
+        await self.conn.execute(
+            'UPDATE random_quest_config SET last_rotation = ? WHERE guild_id = ?',
+            (now, guild_id)
+        )
+        await self.conn.commit()
+        return new_quests
+
+    # ==========================================
+    #     TEMPORARY ROLES & XP BOOSTS
+    # ==========================================
+
+    async def add_temporary_role(self, guild_id: str, user_id: str, role_id: str, expires_at: str):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO temporary_roles (guild_id, user_id, role_id, expires_at) VALUES (?, ?, ?, ?)',
+            (guild_id, user_id, role_id, expires_at)
+        )
+        await self.conn.commit()
+
+    async def remove_expired_roles(self) -> list:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM temporary_roles WHERE expires_at <= ?', (now,)
+        )
+        expired = [dict(row) for row in await cursor.fetchall()]
+        if expired:
+            await self.conn.execute(
+                'DELETE FROM temporary_roles WHERE expires_at <= ?', (now,)
+            )
+            await self.conn.commit()
+        return expired
+
+    async def add_xp_boost(self, guild_id: str, user_id: str, multiplier: float, expires_at: str):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO xp_boosts (guild_id, user_id, multiplier, expires_at) VALUES (?, ?, ?, ?)',
+            (guild_id, user_id, multiplier, expires_at)
+        )
+        await self.conn.commit()
+
+    async def get_xp_boost(self, guild_id: str, user_id: str) -> dict:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM xp_boosts WHERE guild_id = ? AND user_id = ? AND expires_at > ?',
+            (guild_id, user_id, now)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def remove_expired_boosts(self) -> list:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM xp_boosts WHERE expires_at <= ?', (now,)
+        )
+        expired = [dict(row) for row in await cursor.fetchall()]
+        if expired:
+            await self.conn.execute(
+                'DELETE FROM xp_boosts WHERE expires_at <= ?', (now,)
+            )
+            await self.conn.commit()
+        return expired
+
+    # ==========================================
+    #     LEVELING SYSTEM
+    # ==========================================
+
+    async def add_xp(self, guild_id: str, user_id: str, amount: int) -> dict:
+        await self.create_user(guild_id, user_id)
+        cursor = await self.conn.execute(
+            'SELECT exp, level FROM users WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return {'leveled_up': False, 'new_level': 1, 'total_xp': amount}
+
+        old_level = row['level']
+        new_xp = row['exp'] + amount
+        new_level = int((new_xp / 100) ** 0.5) + 1
+
+        await self.conn.execute(
+            'UPDATE users SET exp = ?, level = ? WHERE guild_id = ? AND user_id = ?',
+            (new_xp, new_level, guild_id, user_id)
+        )
+        await self.conn.commit()
+
+        return {
+            'leveled_up': new_level > old_level,
+            'new_level': new_level,
+            'total_xp': new_xp,
+            'old_level': old_level,
+        }
+
+    async def get_user_level(self, guild_id: str, user_id: str) -> dict:
+        await self.create_user(guild_id, user_id)
+        cursor = await self.conn.execute(
+            'SELECT exp, level FROM users WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return {'exp': 0, 'level': 1}
+        return dict(row)
+
+    async def get_level_roles(self, guild_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT level, role_id FROM level_roles WHERE guild_id = ? ORDER BY level',
+            (guild_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def set_level_role(self, guild_id: str, level: int, role_id: str):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO level_roles (guild_id, level, role_id) VALUES (?, ?, ?)',
+            (guild_id, level, role_id)
+        )
+        await self.conn.commit()
+
+    async def remove_level_role(self, guild_id: str, level: int):
+        await self.conn.execute(
+            'DELETE FROM level_roles WHERE guild_id = ? AND level = ?',
+            (guild_id, level)
+        )
+        await self.conn.commit()
+
+    async def get_top_users_by_level(self, guild_id: str, limit: int = 10) -> list:
+        cursor = await self.conn.execute(
+            'SELECT user_id, exp, level FROM users WHERE guild_id = ? ORDER BY exp DESC LIMIT ?',
+            (guild_id, limit)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_xp_cooldown(self, guild_id: str, user_id: str) -> str:
+        cursor = await self.conn.execute(
+            'SELECT last_xp_time FROM users WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        return row['last_xp_time'] if row else None
+
+    async def set_xp_cooldown(self, guild_id: str, user_id: str):
+        from datetime import datetime, timezone
+        await self.conn.execute(
+            'UPDATE users SET last_xp_time = ? WHERE guild_id = ? AND user_id = ?',
+            (datetime.now(timezone.utc).isoformat(), guild_id, user_id)
+        )
+        await self.conn.commit()
+
+    # ==========================================
+    #     SHOP
+    # ==========================================
+
+    async def create_shop_item(self, guild_id: str, item_id: str, name: str, description: str,
+                               price: int, item_type: str, role_id: str = None, metadata: dict = None, stock: int = -1):
+        import json
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO shop_items (guild_id, item_id, name, description, price, item_type, role_id, metadata, stock, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+            (guild_id, item_id, name, description, price, item_type, role_id, json.dumps(metadata or {}, ensure_ascii=False), stock)
+        )
+        await self.conn.commit()
+
+    async def delete_shop_item(self, guild_id: str, item_id: str):
+        await self.conn.execute('DELETE FROM shop_items WHERE guild_id = ? AND item_id = ?', (guild_id, item_id))
+        await self.conn.commit()
+
+    async def get_shop_items(self, guild_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT item_id, name, description, price, item_type, role_id, metadata, stock, enabled FROM shop_items WHERE guild_id = ? AND enabled = 1',
+            (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        result = []
+        import json
+        for row in rows:
+            item = dict(row)
+            item['metadata'] = json.loads(item['metadata'])
+            result.append(item)
+        return result
+
+    async def get_shop_item(self, guild_id: str, item_id: str) -> dict:
+        import json
+        cursor = await self.conn.execute(
+            'SELECT item_id, name, description, price, item_type, role_id, metadata, stock, enabled FROM shop_items WHERE guild_id = ? AND item_id = ?',
+            (guild_id, item_id)
+        )
+        row = await cursor.fetchone()
+        if row:
+            item = dict(row)
+            item['metadata'] = json.loads(item['metadata'])
+            return item
+        return None
+
+    async def buy_shop_item(self, guild_id: str, user_id: str, item_id: str) -> bool:
+        item = await self.get_shop_item(guild_id, item_id)
+        if not item or not item['enabled']:
+            return False
+        if item['stock'] == 0:
+            return False
+
+        user = await self.get_or_create_user(guild_id, user_id)
+        if user.get('balance', 0) < item['price']:
+            return False
+
+        await self.conn.execute(
+            'UPDATE users SET balance = balance - ? WHERE guild_id = ? AND user_id = ?',
+            (item['price'], guild_id, user_id)
+        )
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO user_inventory (guild_id, user_id, item_id, quantity, purchased_at) VALUES (?, ?, ?, COALESCE((SELECT quantity FROM user_inventory WHERE guild_id = ? AND user_id = ? AND item_id = ?), 0) + 1, ?)',
+            (guild_id, user_id, item_id, guild_id, user_id, item_id, datetime.now(timezone.utc).isoformat())
+        )
+        if item['stock'] > 0:
+            await self.conn.execute(
+                'UPDATE shop_items SET stock = stock - 1 WHERE guild_id = ? AND item_id = ?',
+                (guild_id, item_id)
+            )
+        await self.conn.commit()
+        return True
+
+    async def get_user_inventory(self, guild_id: str, user_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT ui.item_id, ui.quantity, si.name, si.description, si.item_type, si.role_id '
+            'FROM user_inventory ui '
+            'LEFT JOIN shop_items si ON ui.item_id = si.item_id AND ui.guild_id = si.guild_id '
+            'WHERE ui.guild_id = ? AND ui.user_id = ?',
+            (guild_id, user_id)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def add_user_title(self, guild_id: str, user_id: str, title: str, emoji: str = '🏷️'):
+        try:
+            await self.conn.execute(
+                'INSERT OR IGNORE INTO user_titles (guild_id, user_id, title, emoji, active) VALUES (?, ?, ?, ?, 0)',
+                (guild_id, user_id, title, emoji)
+            )
+            await self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    async def get_user_titles(self, guild_id: str, user_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT title, emoji, active FROM user_titles WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def set_active_title(self, guild_id: str, user_id: str, title: str):
+        await self.conn.execute(
+            'UPDATE user_titles SET active = 0 WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        await self.conn.execute(
+            'UPDATE user_titles SET active = 1 WHERE guild_id = ? AND user_id = ? AND title = ?',
+            (guild_id, user_id, title)
+        )
+        await self.conn.commit()
+
+    # ==========================================
+    #     DAILY REWARDS / ACTIVITIES
+    # ==========================================
+
+    async def claim_daily_reward(self, guild_id: str, user_id: str, base_reward: int = 100) -> tuple[bool, int, int]:
+        cursor = await self.conn.execute(
+            'SELECT last_claim, streak FROM daily_rewards WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        now = datetime.now(timezone.utc)
+        streak = 1
+
+        if row:
+            last_claim = datetime.fromisoformat(row['last_claim'])
+            diff = now - last_claim
+            if diff.total_seconds() < 86400:
+                return False, 0, 0
+            if diff.total_seconds() < 172800:
+                streak = row['streak'] + 1
+            else:
+                streak = 1
+
+        reward = base_reward + (streak - 1) * 25
+
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO daily_rewards (guild_id, user_id, last_claim, streak) VALUES (?, ?, ?, ?)',
+            (guild_id, user_id, now.isoformat(), streak)
+        )
+        await self.update_user_balance(guild_id, user_id, reward)
+        return True, reward, streak
+
+    async def get_daily_streak(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT streak FROM daily_rewards WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        return row['streak'] if row else 0
+
+    async def update_activity(self, guild_id: str, user_id: str, activity_type: str, amount: int = 1):
+        await self.conn.execute(
+            'INSERT INTO user_activities (guild_id, user_id, activity_type, amount, last_updated) VALUES (?, ?, ?, ?, ?) '
+            'ON CONFLICT(guild_id, user_id, activity_type) DO UPDATE SET amount = amount + ?, last_updated = ?',
+            (guild_id, user_id, activity_type, amount, datetime.now(timezone.utc).isoformat(), amount, datetime.now(timezone.utc).isoformat())
+        )
+        await self.conn.commit()
+
+    async def get_user_activities(self, guild_id: str, user_id: str) -> dict:
+        cursor = await self.conn.execute(
+            'SELECT activity_type, amount FROM user_activities WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        rows = await cursor.fetchall()
+        return {row['activity_type']: row['amount'] for row in rows}
