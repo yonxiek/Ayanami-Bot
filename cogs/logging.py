@@ -813,8 +813,8 @@ class Logging(commands.Cog):
         await self.send_log(interaction.guild.id, embed)
 
     @commands.Cog.listener()
-    async def on_command_completion(self, ctx: commands.Context, command):
-        if not ctx.guild:
+    async def on_command_completion(self, ctx: commands.Context):
+        if not ctx.guild or not ctx.command:
             return
         if not await self.is_event_enabled(ctx.guild.id, "commands"):
             return
@@ -823,6 +823,7 @@ class Logging(commands.Cog):
             return
         user_text = f"{user.mention} {user.name} {user.id}"
         prefix = ctx.prefix or ""
+        command = ctx.command
         command_text = f"`{prefix}{command.qualified_name}`"
 
         embed = discord.Embed(title="Command", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
