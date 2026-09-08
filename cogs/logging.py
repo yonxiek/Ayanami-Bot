@@ -128,7 +128,7 @@ class Logging(commands.Cog):
 
         embed = discord.Embed(title="Участник вошёл", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-        embed.add_field(name="Участник", value=f"{member.mention} ({member.display_name}, ID: {member.id})", inline=False)
+        embed.add_field(name="Участник", value=f"{member.mention} ({member.name}, ID: {member.id})", inline=False)
         embed.add_field(name="Аккаунт создан", value=f"<t:{int(member.created_at.timestamp())}:R>", inline=True)
         if member.joined_at:
             embed.add_field(name="Присоединился", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
@@ -144,7 +144,7 @@ class Logging(commands.Cog):
 
         embed = discord.Embed(title="Участник вышел", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-        embed.add_field(name="Участник", value=f"{member.display_name} (`{member.id}`)", inline=True)
+        embed.add_field(name="Участник", value=f"{member.name} (`{member.id}`)", inline=True)
         roles = [r.mention for r in member.roles if not r.is_default()]
         if roles:
             embed.add_field(name="Роли", value=", ".join(roles[:15]), inline=False)
@@ -168,7 +168,7 @@ class Logging(commands.Cog):
                     actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.member_role_update, after.id)
                     embed = discord.Embed(title="Роль выдана", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
                     embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                    embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                    embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                     embed.add_field(name="Роли", value=", ".join([r.mention for r in added]), inline=False)
                     if actor:
                         embed.set_footer(text=f"Выполнил: {actor.display_name} ({actor.id})")
@@ -180,7 +180,7 @@ class Logging(commands.Cog):
                     actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.member_role_update, after.id)
                     embed = discord.Embed(title="Роль снята", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
                     embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                    embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                    embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                     embed.add_field(name="Роли", value=", ".join([r.mention for r in removed]), inline=False)
                     if actor:
                         embed.set_footer(text=f"Выполнил: {actor.display_name} ({actor.id})")
@@ -197,12 +197,12 @@ class Logging(commands.Cog):
                     if is_boosting:
                         embed = discord.Embed(title="Буст начислен", color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
                         embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                        embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                        embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                         embed.add_field(name="Начало", value=f"<t:{int(after.premium_since.timestamp())}:R>", inline=True)
                     else:
                         embed = discord.Embed(title="Буст снят", color=discord.Color.greyple(), timestamp=datetime.now(timezone.utc))
                         embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                        embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                        embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                     embed.set_footer(text="Ayanami System")
                     await self.send_log(guild_id, embed)
 
@@ -214,7 +214,7 @@ class Logging(commands.Cog):
                 actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.member_update, after.id)
                 embed = discord.Embed(title="Изменение никнейма", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
                 embed.set_author(name=after.name, icon_url=after.display_avatar.url)
-                embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                 embed.add_field(name="Старый ник", value=before.nick or before.name, inline=True)
                 embed.add_field(name="Новый ник", value=after.nick or after.name, inline=True)
                 if actor and actor.id != after.id:
@@ -233,13 +233,13 @@ class Logging(commands.Cog):
                         if after_timeout:
                             embed = discord.Embed(title="Тайм-аут (Discord)", color=discord.Color.greyple(), timestamp=datetime.now(timezone.utc))
                             embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                            embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                            embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                             embed.set_footer(text="Ayanami System")
                             await self.send_log(guild_id, embed)
                         else:
                             embed = discord.Embed(title="Тайм-аут снят (Discord)", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
                             embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-                            embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+                            embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
                             embed.set_footer(text="Ayanami System")
                             await self.send_log(guild_id, embed)
             except AttributeError:
@@ -805,7 +805,7 @@ class Logging(commands.Cog):
 
         # User: mention name id
         if hasattr(user, 'mention'):
-            user_name = getattr(user, 'display_name', str(user))
+            user_name = getattr(user, 'name', str(user))
             user_text = f"{user.mention} {user_name} {user.id}"
         else:
             user_text = str(user)
@@ -813,7 +813,7 @@ class Logging(commands.Cog):
 
         # Moderator: mention name id
         if moderator:
-            mod_name = getattr(moderator, 'display_name', str(moderator))
+            mod_name = getattr(moderator, 'name', str(moderator))
             mod_text = f"{moderator.mention} {mod_name} {moderator.id}"
         else:
             mod_text = "–"
@@ -887,7 +887,7 @@ class Logging(commands.Cog):
                 continue
             embed = discord.Embed(title="Профиль обновлён", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
             embed.set_author(name=after.display_name, icon_url=after.display_avatar.url)
-            embed.add_field(name="Участник", value=f"{after.mention} ({after.display_name}, ID: {after.id})", inline=False)
+            embed.add_field(name="Участник", value=f"{after.mention} ({after.name}, ID: {after.id})", inline=False)
             for name, old_val, new_val in changes:
                 if "URL" in name or name == "Аватар" or name == "Баннер":
                     embed.add_field(name=f"{name} (было)", value=old_val[:100] if old_val != "нет" else "нет", inline=True)

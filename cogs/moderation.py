@@ -41,8 +41,8 @@ class UnwarnModal(discord.ui.Modal, title="Снятие предупрежден
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{self.target_member.mention} {self.target_member.display_name} {self.target_member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{self.target_member.mention} {self.target_member.name} {self.target_member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=f"Предупреждение #{self.warn_id.value} снято", inline=False)
@@ -74,7 +74,7 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
         user_line = f"{interaction.channel.name} {len(deleted)}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
@@ -113,7 +113,7 @@ class Moderation(commands.Cog):
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
         mod_line = "–"
-        user_line = f"{target.mention} {target.display_name} {target.id}"
+        user_line = f"{target.mention} {target.name} {target.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=f"Всего действий: {total}", inline=False)
@@ -148,8 +148,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention} {member.display_name} {member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         for name, value in [("Действие", action), ("Значение", str(count))]:
@@ -167,7 +167,7 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
         user_line = f"{interaction.channel.name}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
@@ -184,7 +184,7 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
         user_line = f"{interaction.channel.name}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
@@ -215,8 +215,8 @@ class Moderation(commands.Cog):
                 embed.set_thumbnail(url=interaction.guild.icon.url)
             if interaction.guild.banner:
                 embed.set_image(url=interaction.guild.banner.url)
-            mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-            user_line = f"{member.mention} {member.display_name} {member.id}"
+            mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+            user_line = f"{member.mention} {member.name} {member.id}"
             embed.add_field(name="Модератор", value=mod_line, inline=False)
             embed.add_field(name="Участник", value=user_line, inline=False)
             embed.add_field(name="Длительность", value=AyanamiUI.format_duration_ru(duration), inline=False)
@@ -250,8 +250,8 @@ class Moderation(commands.Cog):
                 embed.set_thumbnail(url=interaction.guild.icon.url)
             if interaction.guild.banner:
                 embed.set_image(url=interaction.guild.banner.url)
-            mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-            user_line = f"{member.mention} {member.display_name} {member.id}"
+            mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+            user_line = f"{member.mention} {member.name} {member.id}"
             embed.add_field(name="Модератор", value=mod_line, inline=False)
             embed.add_field(name="Участник", value=user_line, inline=False)
             embed.add_field(name="Причина", value=reason, inline=False)
@@ -315,8 +315,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention} {member.display_name} {member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         for name, value in [("Варнов", f"{warn_count if warn_limit > 0 else '∞'}" + (f" / {warn_limit} → {action_text}" if warn_limit > 0 and action_text else ""))]:
@@ -343,7 +343,7 @@ class Moderation(commands.Cog):
                 warn_text += f"**ID: `{r[0]}`** | Модератор: <@{r[1]}>\n> {r[2]}\n\n"
             description = warn_text
 
-        embed = discord.Embed(title=f"### Нарушения: {target.display_name}", description=description, color=discord.Color(0x2b2d31))
+        embed = discord.Embed(title=f"### Нарушения: {target.name}", description=description, color=discord.Color(0x2b2d31))
         embed.set_footer(text="Ayanami System")
 
         view = discord.ui.View()
@@ -372,8 +372,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention} {member.display_name} {member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
@@ -394,8 +394,8 @@ class Moderation(commands.Cog):
                 embed.set_thumbnail(url=interaction.guild.icon.url)
             if interaction.guild.banner:
                 embed.set_image(url=interaction.guild.banner.url)
-            mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-            user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.display_name} {str(member.id)}"
+            mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+            user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {str(member.id)}"
             embed.add_field(name="Модератор", value=mod_line, inline=False)
             embed.add_field(name="Участник", value=user_line, inline=False)
             embed.add_field(name="Причина", value=reason, inline=False)
@@ -416,8 +416,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.display_name} {str(member.id)}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {str(member.id)}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
@@ -501,8 +501,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.display_name} {str(user.id)}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.name} {str(user.id)}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
@@ -548,8 +548,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.display_name} {str(user.id)}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.name} {str(user.id)}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
@@ -577,8 +577,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention} {member.display_name} {member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=f"Повышен до {role.mention}", inline=False)
@@ -593,8 +593,8 @@ class Moderation(commands.Cog):
                 log_embed.set_thumbnail(url=interaction.guild.icon.url)
             if interaction.guild.banner:
                 log_embed.set_image(url=interaction.guild.banner.url)
-            mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-            user_line = f"{member.mention} {member.display_name} {member.id}"
+            mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+            user_line = f"{member.mention} {member.name} {member.id}"
             log_embed.add_field(name="Модератор", value=mod_line, inline=False)
             log_embed.add_field(name="Участник", value=user_line, inline=False)
             log_embed.add_field(name="Причина", value=f"Повышен до {role.mention}", inline=False)
@@ -620,8 +620,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention} {member.display_name} {member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=f"Снят с должности {role.mention}", inline=False)
@@ -636,8 +636,8 @@ class Moderation(commands.Cog):
                 log_embed.set_thumbnail(url=interaction.guild.icon.url)
             if interaction.guild.banner:
                 log_embed.set_image(url=interaction.guild.banner.url)
-            mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-            user_line = f"{member.mention} {member.display_name} {member.id}"
+            mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+            user_line = f"{member.mention} {member.name} {member.id}"
             log_embed.add_field(name="Модератор", value=mod_line, inline=False)
             log_embed.add_field(name="Участник", value=user_line, inline=False)
             log_embed.add_field(name="Причина", value=f"Снят с должности {role.mention}", inline=False)
@@ -661,8 +661,8 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=interaction.guild.icon.url)
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
-        mod_line = f"{interaction.user.mention} {interaction.user.display_name} {interaction.user.id}"
-        user_line = f"{member.mention} {member.display_name} {member.id}"
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=note, inline=False)
@@ -696,9 +696,9 @@ class Moderation(commands.Cog):
                 lines.append(f"• от <@{n[0]}> — {n[1]} (<t:{int(datetime.fromisoformat(n[2]).timestamp())}:R>)")
 
         if not lines:
-            lines.append(f"### {member.display_name}\nУ участника нет варнов или заметок.")
+            lines.append(f"### {member.name}\nУ участника нет варнов или заметок.")
 
-        embed = discord.Embed(title=f"История: {member.display_name}", description="\n".join(lines), color=discord.Color(0x2b2d31))
+        embed = discord.Embed(title=f"История: {member.name}", description="\n".join(lines), color=discord.Color(0x2b2d31))
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text="Ayanami System")
         await interaction.followup.send(embed=embed, ephemeral=True)
