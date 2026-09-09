@@ -440,9 +440,8 @@ class Database:
     async def increment_quest_progress(self, guild_id: str, user_id: str, quest_type: str, amount: int = 1) -> list:
         cursor = await self.conn.execute(
             'SELECT q.quest_id, q.target, q.reward, q.name FROM daily_quests q '
-            'LEFT JOIN user_quests uq ON q.quest_id = uq.quest_id AND q.guild_id = uq.guild_id AND uq.user_id = ? '
             'WHERE q.guild_id = ? AND q.quest_type = ? AND q.enabled = 1',
-            (user_id, guild_id, quest_type)
+            (guild_id, quest_type)
         )
         rows = await cursor.fetchall()
         completed_quests = []
@@ -450,7 +449,15 @@ class Database:
             quest_id = row['quest_id']
             target = row['target']
             user_quest = await self.get_user_quest_progress(guild_id, user_id, quest_id)
-            if user_quest and not user_quest['completed']:
+            if not user_quest:
+                await self.conn.execute(
+                    'INSERT INTO user_quests (guild_id, user_id, quest_id, progress, completed, claimed, last_reset) '
+                    'VALUES (?, ?, ?, 0, 0, 0, ?)',
+                    (guild_id, user_id, quest_id, datetime.now(timezone.utc).isoformat())
+                )
+                await self.conn.commit()
+                user_quest = {'progress': 0, 'completed': False, 'claimed': False}
+            if not user_quest['completed']:
                 new_progress = user_quest['progress'] + amount
                 if new_progress >= target:
                     await self.complete_quest(guild_id, user_id, quest_id)

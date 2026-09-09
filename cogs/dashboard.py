@@ -1757,11 +1757,11 @@ class QuestAddModal(discord.ui.Modal):
             required=True,
             max_length=100
         )
-        self.desc_input = discord.ui.TextInput(
-            label="Описание",
-            placeholder="Например: Отправь 50 сообщений на сервере",
+        self.type_input = discord.ui.TextInput(
+            label="Тип (messages/commands/reactions/voice_join)",
+            placeholder="Например: messages",
             required=True,
-            max_length=200
+            max_length=20
         )
         self.target_input = discord.ui.TextInput(
             label="Цель (количество)",
@@ -1775,16 +1775,9 @@ class QuestAddModal(discord.ui.Modal):
             required=True,
             max_length=10
         )
-        self.type_input = discord.ui.TextInput(
-            label="Тип: messages, commands, reactions, voice_join",
-            placeholder="Например: messages",
-            required=True,
-            max_length=20
-        )
 
         self.add_item(self.quest_id_input)
         self.add_item(self.name_input)
-        self.add_item(self.desc_input)
         self.add_item(self.type_input)
         self.add_item(self.target_input)
         self.add_item(self.reward_input)
@@ -1803,7 +1796,7 @@ class QuestAddModal(discord.ui.Modal):
 
         await self.db.create_quest(
             str(self.guild_id), self.quest_id_input.value.strip(),
-            self.name_input.value, self.desc_input.value,
+            self.name_input.value, self.name_input.value,
             quest_type, target, reward
         )
         await interaction.followup.send(f"✅ Квест **{self.name_input.value}** создан!", ephemeral=True)
@@ -1820,7 +1813,6 @@ class QuestAddModal(discord.ui.Modal):
                         await sys_ch.send(
                             f"📜 **Новый квест!**\n"
                             f"> **{self.name_input.value}**\n"
-                            f"> {self.desc_input.value}\n"
                             f"> Тип: `{type_names.get(quest_type, quest_type)}` | Цель: `{target}` | Награда: `{reward}`"
                         )
                     except discord.Forbidden:
@@ -1854,7 +1846,7 @@ class RandomQuestAddModal(discord.ui.Modal):
         self.guild_id = guild_id
 
         self.name_input = discord.ui.TextInput(label="Название", placeholder="Например: Напиши 30 сообщений", required=True, max_length=100)
-        self.type_input = discord.ui.TextInput(label="Тип: messages, commands, reactions, voice_join", placeholder="Например: messages", required=True, max_length=20)
+        self.type_input = discord.ui.TextInput(label="Тип (messages/commands/reactions/voice_join)", placeholder="Например: messages", required=True, max_length=20)
         self.target_input = discord.ui.TextInput(label="Цель (количество)", placeholder="Например: 30", required=True, max_length=10)
         self.reward_input = discord.ui.TextInput(label="Награда (монетки)", placeholder="Например: 150", required=True, max_length=10)
         self.weight_input = discord.ui.TextInput(label="Вес (чем больше, тем чаще)", placeholder="Например: 1", required=False, max_length=5)
@@ -1954,12 +1946,31 @@ class SetupQuestsView(discord.ui.View):
             f"**Активных квестов:** {len(quests)}",
             f"**Пул рандомных:** {len(pool)} (выборка {config['count']}, интервал {config['interval_hours']}ч)",
             "",
-            "**Как использовать:**",
-            "➕ **Добавить квест** — создайте квест вручную (ID, название, тип, цель, награда)",
-            "🎲 **Добавить в пул** — добавьте шаблон для рандомной ротации",
-            "🔄 **Ротация** — немедленно обновить рандомные квесты",
+            "**Как создать квест:**",
+            "1. Нажмите **➕ Добавить квест**",
+            "2. Заполните поля:",
+            "   • **ID** — уникальный идентификатор (например: `daily_msgs`)",
+            "   • **Название** — видно участникам (например: `Напиши 300 сообщений`)",
+            "   • **Тип** — что считать: `messages` / `commands` / `reactions` / `voice_join`",
+            "   • **Цель** — сколько нужно (в сообщениях/командах/реакциях/минутах войса)",
+            "   • **Награда** — монетки за выполнение",
             "",
-            "**Типы квестов:** `messages`, `commands`, `reactions`, `voice_join`",
+            "**Примеры квестов:**",
+            "• `Напиши 300 сообщений` → тип: `messages`, цель: `300`, награда: `500`",
+            "• `Посиди 120 мин в войсе` → тип: `voice_join`, цель: `120`, награда: `800`",
+            "• `Выполни 10 команд` → тип: `commands`, цель: `10`, награда: `300`",
+            "• `Поставь 20 реакций` → тип: `reactions`, цель: `20`, награда: `200`",
+            "",
+            "**Рандомные квесты:**",
+            "1. Добавьте шаблоны через **🎲 Добавить в пул**",
+            "2. Настройте выборку и интервал через **⚙️ Настройки пула**",
+            "3. Бот будет автоматически выбирать квесты из пула по расписанию",
+            "4. Или нажмите **🔄 Ротация** для немедленного обновления",
+            "",
+            "**Управление:**",
+            "➕ Добавить / 🗑️ Удалить / 📋 Список — ручное управление квестами",
+            "🎲 Пул — добавление/удаление шаблонов для рандома",
+            "⚙️ Настройки пула — сколько квестов выбирать и как часто",
             "",
             "*Уведомления о новых квестах отправляются в системный канал.*",
         ]
@@ -2039,43 +2050,32 @@ class ShopItemAddModal(discord.ui.Modal):
         self.name_input = discord.ui.TextInput(label="Название", placeholder="Например: VIP роль", required=True, max_length=100)
         self.desc_input = discord.ui.TextInput(label="Описание", placeholder="Например: VIP привилегии на 30 дней", required=True, max_length=200)
         self.price_input = discord.ui.TextInput(label="Цена (монетки)", placeholder="Например: 5000", required=True, max_length=10)
-        self.type_input = discord.ui.TextInput(label="Тип: role, temp_role, title, box, color, lootbox, xp_boost, nickname_token", placeholder="Например: role", required=True, max_length=30)
-        self.meta_input = discord.ui.TextInput(label="Metadata (JSON, опционально)", placeholder='Например: {"hours": 24} или {"min_reward": 50, "max_reward": 500}', required=False, max_length=300)
-        self.stock_input = discord.ui.TextInput(label="Сток (-1 = бесконечно)", placeholder="Например: -1", required=False, max_length=10)
+        self.type_input = discord.ui.TextInput(label="Тип товара", placeholder="role, temp_role, title, box, color, lootbox, xp_boost, nickname_token", required=True, max_length=30)
 
         self.add_item(self.item_id_input)
         self.add_item(self.name_input)
         self.add_item(self.desc_input)
         self.add_item(self.type_input)
         self.add_item(self.price_input)
-        self.add_item(self.meta_input)
-        self.add_item(self.stock_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             price = int(self.price_input.value)
-            stock = int(self.stock_input.value) if self.stock_input.value else -1
         except ValueError:
-            return await interaction.followup.send("❌ Цена и сток должны быть числами!", ephemeral=True)
+            return await interaction.followup.send("❌ Цена должна быть числом!", ephemeral=True)
 
         item_type = self.type_input.value.strip()
         valid_types = ["role", "temp_role", "title", "box", "color", "lootbox", "xp_boost", "nickname_token"]
         if item_type not in valid_types:
             return await interaction.followup.send(f"❌ Тип: {', '.join(valid_types)}", ephemeral=True)
 
-        import json
         metadata = {}
-        if self.meta_input.value:
-            try:
-                metadata = json.loads(self.meta_input.value)
-            except json.JSONDecodeError:
-                return await interaction.followup.send("❌ Metadata должен быть валидным JSON!", ephemeral=True)
 
         await self.db.create_shop_item(
             str(self.guild_id), self.item_id_input.value.strip(),
             self.name_input.value, self.desc_input.value,
-            price, item_type, metadata=metadata, stock=stock
+            price, item_type, metadata=metadata, stock=-1
         )
         await interaction.followup.send(f"✅ Товар **{self.name_input.value}** добавлен!", ephemeral=True)
 

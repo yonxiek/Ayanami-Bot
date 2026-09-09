@@ -13,6 +13,7 @@ class Quests(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
+        self.voice_sessions = {}
         self.daily_reset.start()
         self.random_quest_rotation.start()
 
@@ -103,19 +104,24 @@ class Quests(commands.Cog):
     async def on_voice_state_update(self, member: discord.Member, before, after):
         if member.bot or not member.guild:
             return
+        guild_id = member.guild.id
+        user_id = member.id
         if before.channel is None and after.channel is not None:
-            await self.db.update_activity(str(member.guild.id), str(member.id), "voice_join")
-            completed = await self.db.increment_quest_progress(str(member.guild.id), str(member.id), "voice_join")
-            if completed:
-                for q in completed:
-                    try:
-                        await member.send(
-                            f"🎁 Квест **{q['name']}** выполнен! Награда **{q['reward']}** {AyanamiUI.E_RP} автоматически начислена."
-                        )
-                    except discord.Forbidden:
-                        pass
+            self.voice_sessions.setdefault(guild_id, {})[user_id] = datetime.now(timezone.utc)
         elif before.channel is not None and after.channel is None:
-            await self.db.update_activity(str(member.guild.id), str(member.id), "voice_leave")
+            start_time = self.voice_sessions.get(guild_id, {}).pop(user_id, None)
+            if start_time:
+                minutes = int((datetime.now(timezone.utc) - start_time).total_seconds() / 60)
+                if minutes > 0:
+                    completed = await self.db.increment_quest_progress(str(guild_id), str(user_id), "voice_join", minutes)
+                    if completed:
+                        for q in completed:
+                            try:
+                                await member.send(
+                                    f"🎁 Квест **{q['name']}** выполнен! Награда **{q['reward']}** {AyanamiUI.E_RP} автоматически начислена."
+                                )
+                            except discord.Forbidden:
+                                pass
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction: discord.Interaction, command):

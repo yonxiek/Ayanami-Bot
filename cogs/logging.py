@@ -257,10 +257,12 @@ class Logging(commands.Cog):
         actor = await self.get_audit_actor(role.guild, discord.AuditLogAction.role_create, role.id)
 
         embed = discord.Embed(title="Role Created", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=role.name, icon_url=role.icon.url if role.icon else discord.Embed.Empty)
+        embed.set_author(name="Role Created")
         embed.add_field(name="Role", value=role.mention, inline=True)
         embed.add_field(name="ID", value=f"`{role.id}`", inline=True)
         embed.add_field(name="Color", value=str(role.color) if role.color != discord.Color.default() else "Not set", inline=True)
+        if role.icon:
+            embed.set_thumbnail(url=role.icon.url)
         embed.set_footer(text=self._actor_footer("Created By", actor))
         await self.send_log(role.guild.id, embed)
 
@@ -273,7 +275,7 @@ class Logging(commands.Cog):
         actor = await self.get_audit_actor(role.guild, discord.AuditLogAction.role_delete, role.id)
 
         embed = discord.Embed(title="Role Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=role.name)
+        embed.set_author(name="Role Deleted")
         embed.add_field(name="Role", value=f"`{role.name}` (`{role.id}`)", inline=True)
         embed.add_field(name="Color", value=str(role.color) if role.color != discord.Color.default() else "Not set", inline=True)
         embed.add_field(name="Members", value=str(len(role.members)), inline=True)
@@ -297,9 +299,11 @@ class Logging(commands.Cog):
             added_perms = new_p - old_p
             removed_perms = old_p - new_p
             if added_perms:
-                changes.append(f"**Permissions Added**: {', '.join([p[0] for p in added_perms])}")
+                added_text = "\n".join([f"> {p[0]}" for p in added_perms])
+                changes.append(f"**Permissions Added**:\n{added_text}")
             if removed_perms:
-                changes.append(f"**Permissions Removed**: {', '.join([p[0] for p in removed_perms])}")
+                removed_text = "\n".join([f"> {p[0]}" for p in removed_perms])
+                changes.append(f"**Permissions Removed**:\n{removed_text}")
         if before.mentionable != after.mentionable:
             changes.append(f"**Mentionable**: {'Yes' if after.mentionable else 'No'}")
         if before.hoist != after.hoist:
@@ -313,9 +317,11 @@ class Logging(commands.Cog):
         actor = await self.get_audit_actor(after.guild, discord.AuditLogAction.role_update, after.id)
 
         embed = discord.Embed(title="Role Updated", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=after.name, icon_url=after.icon.url if after.icon else discord.Embed.Empty)
+        embed.set_author(name="Role Updated")
         embed.add_field(name="Role", value=after.mention, inline=True)
         embed.add_field(name="Changes", value="\n".join(changes), inline=False)
+        if after.icon:
+            embed.set_thumbnail(url=after.icon.url)
         embed.set_footer(text=self._actor_footer("Changed By", actor))
         await self.send_log(after.guild.id, embed)
 
@@ -695,7 +701,7 @@ class Logging(commands.Cog):
         actor = await self.get_audit_actor(channel.guild, discord.AuditLogAction.channel_create, channel.id)
 
         embed = discord.Embed(title="Channel Created", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=channel.name)
+        embed.set_author(name="Channel Created")
         embed.add_field(name="Channel", value=channel.mention, inline=True)
         embed.add_field(name="Type", value=str(channel.type).replace("_", " ").title(), inline=True)
         embed.set_footer(text=self._actor_footer("Created By", actor))
@@ -708,7 +714,7 @@ class Logging(commands.Cog):
         actor = await self.get_audit_actor(channel.guild, discord.AuditLogAction.channel_delete, channel.id)
 
         embed = discord.Embed(title="Channel Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=channel.name)
+        embed.set_author(name="Channel Deleted")
         embed.add_field(name="Channel", value=f"`{channel.name}` (`{channel.id}`)", inline=True)
         embed.add_field(name="Type", value=str(channel.type).replace("_", " ").title(), inline=True)
         embed.set_footer(text=self._actor_footer("Deleted By", actor))
