@@ -105,6 +105,48 @@ class Logging(commands.Cog):
         await self.send_log(message.guild.id, embed)
 
     @commands.Cog.listener()
+    async def on_bulk_message_delete(self, messages):
+        if not messages:
+            return
+        guild = messages[0].guild
+        if not guild:
+            return
+        if not await self.is_event_enabled(guild.id, "msg_delete"):
+            return
+
+        by_author = {}
+        for msg in messages:
+            if msg.author.bot:
+                continue
+            by_author.setdefault(msg.author, []).append(msg)
+
+        total = sum(len(msgs) for msgs in by_author.values())
+        channel = messages[0].channel
+
+        embed = discord.Embed(title="Bulk Delete", color=discord.Color.dark_red(), timestamp=datetime.now(timezone.utc))
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="Messages", value=str(total), inline=True)
+
+        lines = []
+        for author, msgs in by_author.items():
+            lines.append(f"{author.mention} — {len(msgs)}")
+        embed.add_field(name="Authors", value="\n".join(lines), inline=False)
+
+        preview = []
+        for author, msgs in by_author.items():
+            for msg in msgs[:3]:
+                if msg.content:
+                    preview.append(f"> **{author.name}**: {msg.content[:80]}")
+            if len(msgs) > 3:
+                preview.append(f"> ... и ещё {len(msgs) - 3} от {author.name}")
+        if preview:
+            embed.add_field(name="Preview", value="\n".join(preview[:10]), inline=False)
+
+        actor = await self.get_audit_actor(guild, discord.AuditLogAction.message_bulk_delete, messages[0].id)
+        embed.set_footer(text=self._actor_footer("Deleted By", actor))
+        await self.send_log(guild.id, embed)
+
+    @commands.Cog.listener()
     async def on_message_edit(self, before, after):
         if before.content == after.content or not before.guild or before.author.bot:
             return
