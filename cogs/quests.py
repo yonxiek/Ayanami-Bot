@@ -32,9 +32,9 @@ class Quests(commands.Cog):
                         await self.db.reset_daily_quests(str(guild.id))
                         break
                 config = await self.db.get_guild_config(str(guild.id))
-                sys_ch_id = config.get("system_channel_id")
+                sys_ch_id = config.get("quest_notif_channel_id") or config.get("system_channel_id")
                 sys_ch = guild.get_channel(int(sys_ch_id)) if sys_ch_id else None
-                if sys_ch and quests:
+                if sys_ch and quests and config.get("quest_notif_enabled", True):
                     try:
                         quest_names = "\n".join([f"> **{q['name']}** — {q['quest_type']}" for q in quests[:5]])
                         embed = discord.Embed(
@@ -83,7 +83,11 @@ class Quests(commands.Cog):
                 if hours_since >= config['interval_hours']:
                     rotated = await self.db.rotate_random_quests(str(guild.id))
                     if rotated:
-                        channel = guild.system_channel or guild.text_channels[0] if guild.text_channels else None
+                        config = await self.db.get_guild_config(str(guild.id))
+                        if not config.get("quest_notif_enabled", True):
+                            continue
+                        channel_id = config.get("quest_notif_channel_id") or config.get("system_channel_id")
+                        channel = guild.get_channel(channel_id) if channel_id else (guild.system_channel or guild.text_channels[0] if guild.text_channels else None)
                         if channel:
                             names = "\n".join([f"> **{n}**" for n in rotated])
                             embed = discord.Embed(

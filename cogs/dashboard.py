@@ -1805,23 +1805,24 @@ class QuestAddModal(discord.ui.Modal):
             guild = self.bot.get_guild(self.guild_id)
             if guild:
                 config = await self.db.get_guild_config(str(self.guild_id))
-                sys_ch_id = config.get("system_channel_id")
-                sys_ch = guild.get_channel(int(sys_ch_id)) if sys_ch_id else None
-                if sys_ch:
-                    type_names = {"messages": "Сообщения", "commands": "Команды", "reactions": "Реакции", "voice_join": "Голос"}
-                    try:
-                        embed = discord.Embed(
-                            title="📜 Новый квест!",
-                            color=Colors.MAIN
-                        )
-                        embed.add_field(name="Квест", value=f"**{self.name_input.value}**", inline=False)
-                        embed.add_field(name="Тип", value=f"`{type_names.get(quest_type, quest_type)}`", inline=True)
-                        embed.add_field(name="Цель", value=f"`{target}`", inline=True)
-                        embed.add_field(name="Награда", value=f"`{reward}`", inline=True)
-                        embed.set_footer(text="Ayanami System")
-                        await sys_ch.send(embed=embed)
-                    except discord.Forbidden:
-                        pass
+                if config.get("quest_notif_enabled", True):
+                    sys_ch_id = config.get("quest_notif_channel_id") or config.get("system_channel_id")
+                    sys_ch = guild.get_channel(int(sys_ch_id)) if sys_ch_id else None
+                    if sys_ch:
+                        type_names = {"messages": "Сообщения", "commands": "Команды", "reactions": "Реакции", "voice_join": "Голос"}
+                        try:
+                            embed = discord.Embed(
+                                title="📜 Новый квест!",
+                                color=Colors.MAIN
+                            )
+                            embed.add_field(name="Квест", value=f"**{self.name_input.value}**", inline=False)
+                            embed.add_field(name="Тип", value=f"`{type_names.get(quest_type, quest_type)}`", inline=True)
+                            embed.add_field(name="Цель", value=f"`{target}`", inline=True)
+                            embed.add_field(name="Награда", value=f"`{reward}`", inline=True)
+                            embed.set_footer(text="Ayanami System")
+                            await sys_ch.send(embed=embed)
+                        except discord.Forbidden:
+                            pass
 
 
 class QuestDeleteModal(discord.ui.Modal):
@@ -1974,14 +1975,15 @@ class SetupQuestsView(discord.ui.View):
             "",
             "**Управление:**",
             "➕ Добавить / 🗑️ Удалить / 📋 Список — ручное управление квестами",
+            "📊 Доска квестов — участники и выполнение по каждому квесту",
             "🎲 Пул — добавление/удаление шаблонов для рандома",
             "⚙️ Настройки пула — сколько квестов выбирать и как часто",
-            "🧹 Очистить данные — сброс прогресса/удаление квестов/очистка пула",
+            "🔔 Уведомления — канал и вкл/выкл уведомлений о квестах (канал ниже)",
+            "🧹 Очистить данные — сброс прогресса/активности/уровней/балансов",
             "",
-            "**Доска квестов:**",
-            "`/questdesk` — обзор всех квестов (участники, выполнение), доступно администраторам",
+            "`/questdesk` — доска квестов командой, доступна администраторам",
             "",
-            "*Уведомления о новых квестах отправляются в системный канал.*",
+            "*Уведомления о квестах отправляются в выбранный канал (по умолчанию — системный).*",
         ]
         embed = discord.Embed(title="📜 Квесты — справка", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
@@ -2008,6 +2010,40 @@ class SetupQuestsView(discord.ui.View):
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @discord.ui.button(label="Доска квестов", emoji="📊", style=discord.ButtonStyle.success, row=0)
+    async def btn_desk(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id = str(self.guild_id)
+        quests = await self.db.get_guild_quests(guild_id)
+        pool = await self.db.get_random_quest_pool(guild_id)
+        if not quests:
+            return await interaction.followup.send("Квестов пока нет. Создайте их ниже.", ephemeral=True)
+
+        stats = await self.db.get_quest_progress_stats(guild_id)
+        type_icons = {"messages": "💬", "commands": "🤖", "reactions": "🎭", "voice_join": "🎧"}
+
+        desc_lines = []
+        for q in quests:
+            status = "🟢" if q['enabled'] else "🔴"
+            st = stats.get(q['quest_id'], {})
+            desc_lines.append(
+                f"{status} {type_icons.get(q['quest_type'], '❓')} **{q['name']}** — `{q['quest_id']}`\n"
+                f"> Тип: `{q['quest_type']}` | Цель: `{q['target']}` | Награда: `{q['reward']}` {AyanamiUI.E_RP}\n"
+                f"> Участники: **{st.get('total', 0)}** | Выполнили: **{st.get('done', 0)}**\n"
+            )
+
+        desc = "\n".join(desc_lines)
+        if pool:
+            desc += f"\n**🎲 Пул рандомных ({len(pool)}):** {', '.join(p['name'] for p in pool)}"
+
+        embed = discord.Embed(title="📊 Доска квестов", description=desc, color=Colors.MAIN)
+        guild = self.cog.bot.get_guild(self.guild_id)
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.set_footer(text="Ayanami System")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @discord.ui.button(label="Добавить в пул", emoji="🎲", style=discord.ButtonStyle.blurple, row=1)
     async def btn_pool_add(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RandomQuestAddModal(self.db, self.guild_id))
@@ -2030,7 +2066,18 @@ class SetupQuestsView(discord.ui.View):
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Ротация", emoji="🔄", style=discord.ButtonStyle.blurple, row=2)
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="Канал уведомлений о квестах",
+        max_values=1, row=2
+    )
+    async def select_notif_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        await interaction.response.defer(ephemeral=True)
+        await self.db.update_config_field(str(self.guild_id), "quest_notif_channel_id", select.values[0].id)
+        await interaction.followup.send(f"✅ Канал уведомлений о квестах: {select.values[0].mention}", ephemeral=True)
+
+    @discord.ui.button(label="Ротация", emoji="🔄", style=discord.ButtonStyle.blurple, row=3)
     async def btn_rotate(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         rotated = await self.db.rotate_random_quests(str(self.guild_id))
@@ -2040,16 +2087,35 @@ class SetupQuestsView(discord.ui.View):
         else:
             await interaction.followup.send("⚠️ Нет квестов в пуле для ротации.", ephemeral=True)
 
-    @discord.ui.button(label="Настройки пула", emoji="⚙️", style=discord.ButtonStyle.grey, row=2)
+    @discord.ui.button(label="Настройки пула", emoji="⚙️", style=discord.ButtonStyle.grey, row=3)
     async def btn_pool_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RandomQuestConfigModal(self.db, self.guild_id))
+
+    @discord.ui.button(label="Уведомления: Вкл", emoji="🔔", style=discord.ButtonStyle.success, row=3)
+    async def btn_notif_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        config = await self.db.get_guild_config(str(self.guild_id))
+        currently = config.get("quest_notif_enabled", True)
+        await self.db.update_config_field(str(self.guild_id), "quest_notif_enabled", not currently)
+        new_state = not currently
+        button.label = "Уведомления: Выкл" if not new_state else "Уведомления: Вкл"
+        button.style = discord.ButtonStyle.danger if not new_state else discord.ButtonStyle.success
+        notif_ch_id = config.get("quest_notif_channel_id") or config.get("system_channel_id")
+        channel_text = f"<#{notif_ch_id}>" if notif_ch_id else "❌ не задан (используйте селект выше)"
+        embed = discord.Embed(
+            description=f"🔔 Уведомления о квестах теперь **{'включены' if new_state else 'выключены'}**. Канал: {channel_text}.",
+            color=Colors.MAIN
+        )
+        embed.set_footer(text="Ayanami System")
+        await interaction.edit_original_response(view=self)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Очистить данные", emoji="🧹", style=discord.ButtonStyle.danger, row=3)
     async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = QuestClearView(self.db, self.guild_id)
         await view.build_select()
         await interaction.response.send_message(
-            "🧹 **Очистка данных квестов**\nВыберите, какие данные нужно очистить:",
+            "🧹 **Очистка данных**\nВыберите, какие данные нужно очистить:",
             view=view, ephemeral=True
         )
 
@@ -2062,12 +2128,16 @@ class QuestClearView(discord.ui.View):
 
     async def build_select(self):
         options = [
-            discord.SelectOption(label="Сбросить весь прогресс", value="__all_progress__", description="Обнулить прогресс всех участников по всем квестам"),
+            discord.SelectOption(label="Сбросить весь прогресс квестов", value="__all_progress__", description="Обнулить прогресс всех участников по всем квестам"),
             discord.SelectOption(label="Удалить все квесты", value="__all_quests__", description="Удалить все квесты и их прогресс"),
             discord.SelectOption(label="Очистить пул рандомных", value="__clear_pool__", description="Удалить все шаблоны из пула"),
+            discord.SelectOption(label="Очистить активность", value="__activity__", description="Удалить статистику активности (сообщения, войс, команды)"),
+            discord.SelectOption(label="Сбросить уровни и XP", value="__levels__", description="Обнулить опыт и сбросить уровни всех участников"),
+            discord.SelectOption(label="Обнулить балансы", value="__balances__", description="Сбросить монетки у всех участников"),
+            discord.SelectOption(label="Сбросить ежедневные награды", value="__daily__", description="Обнулить серии и ежедневные награды"),
         ]
         quests = await self.db.get_guild_quests(str(self.guild_id))
-        for q in quests[:22]:
+        for q in quests[:18]:
             label = f"Прогресс: {q['name']}"[:80]
             options.append(
                 discord.SelectOption(
@@ -2094,6 +2164,18 @@ class QuestClearView(discord.ui.View):
         elif value == "__clear_pool__":
             await self.db.clear_random_pool(guild_id)
             msg = "✅ Пул рандомных квестов очищен."
+        elif value == "__activity__":
+            await self.db.clear_user_activity(guild_id)
+            msg = "✅ Активность очищена."
+        elif value == "__levels__":
+            await self.db.clear_levels(guild_id)
+            msg = "✅ Уровни и XP сброшены."
+        elif value == "__balances__":
+            await self.db.clear_balances(guild_id)
+            msg = "✅ Балансы обнулены."
+        elif value == "__daily__":
+            await self.db.clear_daily_rewards(guild_id)
+            msg = "✅ Ежедневные награды сброшены."
         elif value.startswith("quest_"):
             quest_id = value[len("quest_"):]
             await self.db.clear_quest_progress(guild_id, quest_id)

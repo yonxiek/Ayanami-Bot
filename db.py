@@ -497,6 +497,22 @@ class Database:
         await self.conn.execute('DELETE FROM random_quest_pool WHERE guild_id = ?', (guild_id,))
         await self.conn.commit()
 
+    async def clear_user_activity(self, guild_id: str):
+        await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_levels(self, guild_id: str):
+        await self.conn.execute('UPDATE users SET exp = 0, level = 1 WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_balances(self, guild_id: str):
+        await self.conn.execute('UPDATE users SET balance = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_daily_rewards(self, guild_id: str):
+        await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
     async def get_quest_progress_stats(self, guild_id: str) -> dict:
         cursor = await self.conn.execute(
             'SELECT quest_id, COUNT(*) as total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as done '
