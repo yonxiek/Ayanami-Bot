@@ -257,6 +257,61 @@ class Quests(commands.Cog):
         from prefix_adapter import InteractionAdapter
         await self.quests.callback(self, InteractionAdapter(ctx))
 
+    @app_commands.command(name="questdesk", description="Обзор всех квестов сервера (доска квестов)")
+    @app_commands.default_permissions(administrator=True)
+    async def questdesk(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            return
+        await interaction.response.defer()
+
+        guild_id = str(interaction.guild.id)
+        quests = await self.db.get_guild_quests(guild_id)
+        pool = await self.db.get_random_quest_pool(guild_id)
+        if not quests:
+            embed = discord.Embed(
+                title="📋 Доска квестов",
+                description="Квестов пока нет. Создайте их через `/setup` → Квесты.",
+                color=Colors.MAIN,
+            )
+            return await interaction.followup.send(embed=embed)
+
+        stats = await self.db.get_quest_progress_stats(guild_id)
+
+        desc_lines = []
+        for q in quests:
+            status = "🟢" if q['enabled'] else "🔴"
+            st = stats.get(q['quest_id'], {})
+            total_users = st.get('total', 0)
+            done_users = st.get('done', 0)
+            type_icons = {
+                "messages": "💬",
+                "commands": "🤖",
+                "reactions": "🎭",
+                "voice_join": "🎧",
+            }
+            icon = type_icons.get(q['quest_type'], "❓")
+            desc_lines.append(
+                f"{status} {icon} **{q['name']}** — `{q['quest_id']}`\n"
+                f"> Тип: `{q['quest_type']}` | Цель: `{q['target']}` | Награда: `{q['reward']}` {AyanamiUI.E_RP}\n"
+                f"> Участники: **{total_users}** | Выполнили: **{done_users}**\n"
+            )
+
+        desc = "\n".join(desc_lines)
+        if pool:
+            pool_names = ", ".join(p['name'] for p in pool)
+            desc += f"\n**🎲 Пул рандомных ({len(pool)}):** {pool_names}"
+
+        embed = discord.Embed(title="📋 Доска квестов", description=desc, color=Colors.MAIN)
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="Ayanami System")
+        await interaction.followup.send(embed=embed)
+
+    @commands.command(name="questdesk")
+    async def questdesk_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.questdesk.callback(self, InteractionAdapter(ctx))
+
     @commands.command(name="daily")
     async def daily_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter

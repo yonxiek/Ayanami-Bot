@@ -480,6 +480,32 @@ class Database:
                     await self.conn.commit()
         return completed_quests
 
+    async def clear_all_quest_progress(self, guild_id: str):
+        await self.conn.execute('DELETE FROM user_quests WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_quest_progress(self, guild_id: str, quest_id: str):
+        await self.conn.execute('DELETE FROM user_quests WHERE guild_id = ? AND quest_id = ?', (guild_id, quest_id))
+        await self.conn.commit()
+
+    async def clear_all_quests(self, guild_id: str):
+        await self.conn.execute('DELETE FROM daily_quests WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM user_quests WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_random_pool(self, guild_id: str):
+        await self.conn.execute('DELETE FROM random_quest_pool WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def get_quest_progress_stats(self, guild_id: str) -> dict:
+        cursor = await self.conn.execute(
+            'SELECT quest_id, COUNT(*) as total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as done '
+            'FROM user_quests WHERE guild_id = ? GROUP BY quest_id',
+            (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        return {row['quest_id']: {'total': row['total'], 'done': row['done']} for row in rows}
+
     # ==========================================
     #     RANDOM QUEST POOL
     # ==========================================

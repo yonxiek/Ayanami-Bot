@@ -1976,6 +1976,10 @@ class SetupQuestsView(discord.ui.View):
             "➕ Добавить / 🗑️ Удалить / 📋 Список — ручное управление квестами",
             "🎲 Пул — добавление/удаление шаблонов для рандома",
             "⚙️ Настройки пула — сколько квестов выбирать и как часто",
+            "🧹 Очистить данные — сброс прогресса/удаление квестов/очистка пула",
+            "",
+            "**Доска квестов:**",
+            "`/questdesk` — обзор всех квестов (участники, выполнение), доступно администраторам",
             "",
             "*Уведомления о новых квестах отправляются в системный канал.*",
         ]
@@ -2039,6 +2043,69 @@ class SetupQuestsView(discord.ui.View):
     @discord.ui.button(label="Настройки пула", emoji="⚙️", style=discord.ButtonStyle.grey, row=2)
     async def btn_pool_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RandomQuestConfigModal(self.db, self.guild_id))
+
+    @discord.ui.button(label="Очистить данные", emoji="🧹", style=discord.ButtonStyle.danger, row=3)
+    async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = QuestClearView(self.db, self.guild_id)
+        await view.build_select()
+        await interaction.response.send_message(
+            "🧹 **Очистка данных квестов**\nВыберите, какие данные нужно очистить:",
+            view=view, ephemeral=True
+        )
+
+
+class QuestClearView(discord.ui.View):
+    def __init__(self, db: Database, guild_id: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.guild_id = guild_id
+
+    async def build_select(self):
+        options = [
+            discord.SelectOption(label="Сбросить весь прогресс", value="__all_progress__", description="Обнулить прогресс всех участников по всем квестам"),
+            discord.SelectOption(label="Удалить все квесты", value="__all_quests__", description="Удалить все квесты и их прогресс"),
+            discord.SelectOption(label="Очистить пул рандомных", value="__clear_pool__", description="Удалить все шаблоны из пула"),
+        ]
+        quests = await self.db.get_guild_quests(str(self.guild_id))
+        for q in quests[:22]:
+            label = f"Прогресс: {q['name']}"[:80]
+            options.append(
+                discord.SelectOption(
+                    label=label,
+                    value=f"quest_{q['quest_id']}",
+                    description=f"Сбросить прогресс по квесту {q['quest_id']}",
+                )
+            )
+
+        select = discord.ui.Select(placeholder="Выберите что очистить...", options=options)
+        select.callback = self.clear_callback
+        self.add_item(select)
+
+    async def clear_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        guild_id = str(self.guild_id)
+
+        if value == "__all_progress__":
+            await self.db.clear_all_quest_progress(guild_id)
+            msg = "✅ Весь прогресс квестов сброшен."
+        elif value == "__all_quests__":
+            await self.db.clear_all_quests(guild_id)
+            msg = "✅ Все квесты и их прогресс удалены."
+        elif value == "__clear_pool__":
+            await self.db.clear_random_pool(guild_id)
+            msg = "✅ Пул рандомных квестов очищен."
+        elif value.startswith("quest_"):
+            quest_id = value[len("quest_"):]
+            await self.db.clear_quest_progress(guild_id, quest_id)
+            msg = f"✅ Прогресс квеста `{quest_id}` сброшен."
+        else:
+            msg = "❌ Неизвестная операция."
+
+        for item in self.children:
+            if isinstance(item, discord.ui.Select):
+                item.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 # ==========================================
