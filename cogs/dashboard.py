@@ -1810,11 +1810,16 @@ class QuestAddModal(discord.ui.Modal):
                 if sys_ch:
                     type_names = {"messages": "Сообщения", "commands": "Команды", "reactions": "Реакции", "voice_join": "Голос"}
                     try:
-                        await sys_ch.send(
-                            f"📜 **Новый квест!**\n"
-                            f"> **{self.name_input.value}**\n"
-                            f"> Тип: `{type_names.get(quest_type, quest_type)}` | Цель: `{target}` | Награда: `{reward}`"
+                        embed = discord.Embed(
+                            title="📜 Новый квест!",
+                            color=Colors.MAIN
                         )
+                        embed.add_field(name="Квест", value=f"**{self.name_input.value}**", inline=False)
+                        embed.add_field(name="Тип", value=f"`{type_names.get(quest_type, quest_type)}`", inline=True)
+                        embed.add_field(name="Цель", value=f"`{target}`", inline=True)
+                        embed.add_field(name="Награда", value=f"`{reward}`", inline=True)
+                        embed.set_footer(text="Ayanami System")
+                        await sys_ch.send(embed=embed)
                     except discord.Forbidden:
                         pass
 

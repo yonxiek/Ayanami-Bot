@@ -36,8 +36,14 @@ class Quests(commands.Cog):
                 sys_ch = guild.get_channel(int(sys_ch_id)) if sys_ch_id else None
                 if sys_ch and quests:
                     try:
-                        quest_names = ", ".join([q['name'] for q in quests[:5]])
-                        await sys_ch.send(f"🔄 Ежедневные квесты сброшены! Доступны: **{quest_names}**")
+                        quest_names = "\n".join([f"> **{q['name']}** — {q['quest_type']}" for q in quests[:5]])
+                        embed = discord.Embed(
+                            title="🔄 Ежедневные квесты сброшены!",
+                            description=f"Доступны:\n{quest_names}",
+                            color=Colors.MAIN
+                        )
+                        embed.set_footer(text="Ayanami System")
+                        await sys_ch.send(embed=embed)
                     except discord.Forbidden:
                         pass
 
@@ -79,10 +85,14 @@ class Quests(commands.Cog):
                     if rotated:
                         channel = guild.system_channel or guild.text_channels[0] if guild.text_channels else None
                         if channel:
-                            names = ", ".join(rotated)
-                            await channel.send(
-                                f"🔄 Рандомные квесты обновлены: **{names}**",
+                            names = "\n".join([f"> **{n}**" for n in rotated])
+                            embed = discord.Embed(
+                                title="🔄 Рандомные квесты обновлены",
+                                description=names,
+                                color=Colors.MAIN
                             )
+                            embed.set_footer(text="Ayanami System")
+                            await channel.send(embed=embed)
             except Exception:
                 pass
 
