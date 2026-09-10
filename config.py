@@ -62,10 +62,23 @@ BLOXLINK_API_KEY: str = get("BLOXLINK_API_KEY", "") or ""
 SNIPE_WEBHOOK_URL: str = get("SNIPE_WEBHOOK_URL", "") or ""
 
 # --- Чат с ИИ (опционально) ---
+#: Провайдер ИИ: gemini, openai, deepseek
+AI_PROVIDER: str = get("AI_PROVIDER", "gemini") or "gemini"
+
 #: Бесплатный ключ Google AI Studio: https://aistudio.google.com/apikey
 GEMINI_API_KEY: str = get("GEMINI_API_KEY", "") or ""
 #: Модель Gemini (на случай смены доступных моделей)
 GEMINI_MODEL: str = get("GEMINI_MODEL", "gemini-2.0-flash") or "gemini-2.0-flash"
+
+#: OpenAI API-ключ (опционально)
+OPENAI_API_KEY: str = get("OPENAI_API_KEY", "") or ""
+#: Модель OpenAI
+OPENAI_MODEL: str = get("OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+
+#: DeepSeek API-ключ (опционально)
+DEEPSEEK_API_KEY: str = get("DEEPSEEK_API_KEY", "") or ""
+#: Модель DeepSeek
+DEEPSEEK_MODEL: str = get("DEEPSEEK_MODEL", "deepseek-chat") or "deepseek-chat"
 
 # --- Музыка (Lavalink, опционально) ---
 #: Хост Lavalink-сервера (пусто = музыка отключена)

@@ -8,8 +8,7 @@ from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 import config
-
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+import ai_client
 
 MODERATION_PROMPT = (
     "Ты — модератор Discord-сервера. Проанализируй сообщение и верни JSON:\n"
@@ -29,11 +28,9 @@ class AIModeration(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
-        self.api_key = config.GEMINI_API_KEY
-        self.model = config.GEMINI_MODEL
 
     async def _check_message(self, message: discord.Message) -> dict | None:
-        if not self.api_key or not message.guild:
+        if not message.guild:
             return None
         if message.author.bot:
             return None
@@ -54,30 +51,31 @@ class AIModeration(commands.Cog):
             return None
 
         prompt = MODERATION_PROMPT.format(text=text)
-        body = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 150},
-        }
-        headers = {"Content-Type": "application/json"}
-        url = GEMINI_URL.format(model=self.model)
+        provider = ai_client.normalize_provider(config_data.get("ai_provider"))
 
         try:
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(f"{url}?key={self.api_key}", json=body, headers=headers) as resp:
-                    if resp.status != 200:
-                        return None
-                    data = await resp.json()
-
-            text_response = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            # Извлекаем JSON из ответа
-            start = text_response.find("{")
-            end = text_response.rfind("}") + 1
-            if start == -1 or end <= start:
-                return None
-            result = json.loads(text_response[start:end])
-            return result
+            response_text = await ai_client.complete(
+                prompt,
+                [{"role": "user", "content": text}],
+                provider=provider,
+                temperature=0.1,
+                max_tokens=150,
+            )
         except Exception:
+            return None
+
+        if not response_text:
+            return None
+
+        # Извлекаем JSON из ответа
+        start = response_text.find("{")
+        end = response_text.rfind("}") + 1
+        if start == -1 or end <= start:
+            return None
+        try:
+            result = json.loads(response_text[start:end])
+            return result
+        except (ValueError, json.JSONDecodeError):
             return None
 
     @commands.Cog.listener()

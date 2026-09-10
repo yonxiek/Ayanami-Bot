@@ -284,7 +284,7 @@ class Database:
                 image_url TEXT,
                 drop_rate REAL DEFAULT 0.1,
                 enabled INTEGER DEFAULT 1,
-                PRIMARY KEY (guild_id, card_id)
+                UNIQUE(guild_id, card_id)
             )''',
             '''CREATE TABLE IF NOT EXISTS user_cards (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1235,3 +1235,65 @@ class Database:
             if weeks_ago >= keep_weeks:
                 await self.conn.execute('DELETE FROM weekly_stats WHERE week_key = ?', (key,))
         await self.conn.commit()
+
+    # ==========================================
+    #     НОВЫЕ МОДУЛИ: тикеты, карточки
+    # ==========================================
+
+    async def count_tickets(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) AS cnt FROM tickets WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id))
+        row = await cursor.fetchone()
+        return row['cnt'] if row else 0
+
+    async def count_unique_cards(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) AS cnt FROM user_cards WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id))
+        row = await cursor.fetchone()
+        return row['cnt'] if row else 0
+
+    async def get_card(self, guild_id: str, card_id: str) -> Optional[dict]:
+        cursor = await self.conn.execute(
+            'SELECT card_id, name, description, rarity, emoji, drop_rate FROM collectible_cards '
+            'WHERE guild_id = ? AND card_id = ? AND enabled = 1', (guild_id, card_id))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def buy_card(self, guild_id: str, user_id: str, card_id: str, price: int) -> bool:
+        card = await self.get_card(guild_id, card_id)
+        if not card:
+            return False
+        user = await self.get_or_create_user(guild_id, user_id)
+        if user.get('balance', 0) < price:
+            return False
+        await self.conn.execute(
+            'UPDATE users SET balance = balance - ? WHERE guild_id = ? AND user_id = ?',
+            (price, guild_id, user_id))
+        await self.conn.execute(
+            'INSERT INTO user_cards (guild_id, user_id, card_id, quantity, obtained_at) VALUES (?, ?, ?, 1, ?) '
+            'ON CONFLICT(guild_id, user_id, card_id) DO UPDATE SET quantity = quantity + 1',
+            (guild_id, user_id, card_id, datetime.now(timezone.utc).isoformat()))
+        await self.conn.commit()
+        return True
+
+    async def sell_card(self, guild_id: str, user_id: str, card_id: str, amount: int, price: int) -> int:
+        cursor = await self.conn.execute(
+            'SELECT quantity FROM user_cards WHERE guild_id = ? AND user_id = ? AND card_id = ?',
+            (guild_id, user_id, card_id))
+        row = await cursor.fetchone()
+        if not row or row['quantity'] < amount:
+            return 0
+        await self.conn.execute(
+            'UPDATE user_cards SET quantity = quantity - ? WHERE guild_id = ? AND user_id = ? AND card_id = ?',
+            (amount, guild_id, user_id, card_id))
+        await self.conn.execute(
+            'DELETE FROM user_cards WHERE guild_id = ? AND user_id = ? AND card_id = ? AND quantity <= 0',
+            (guild_id, user_id, card_id))
+        user = await self.get_or_create_user(guild_id, user_id)
+        await self.conn.execute(
+            'UPDATE users SET balance = balance + ? WHERE guild_id = ? AND user_id = ?',
+            (price * amount, guild_id, user_id))
+        await self.conn.commit()
+        return price * amount

@@ -5,6 +5,7 @@ from discord import app_commands
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
+from cogs.achievements import award_achievement
 
 
 class ClanCreateModal(discord.ui.Modal, title="Создать клан"):
@@ -62,6 +63,7 @@ class ClanCreateModal(discord.ui.Modal, title="Создать клан"):
             color=Colors.SUCCESS,
         )
         await interaction.followup.send(embed=embed)
+        await award_achievement(self.cog.db, guild_id, user_id, "clan_create", interaction.user)
 
 
 class Clans(commands.Cog):
@@ -153,6 +155,7 @@ class Clans(commands.Cog):
         )
         await self.db.conn.commit()
         await interaction.response.send_message(f"✅ Вы вступили в клан **{clan_name}**!")
+        await award_achievement(self.db, guild_id, user_id, "clan_join", interaction.user)
 
     @app_commands.command(name="clan_leave", description="Покинуть клан")
     async def clan_leave(self, interaction: discord.Interaction):

@@ -6,6 +6,7 @@ from discord import app_commands
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
+from cogs.achievements import award_achievement
 
 
 OPTION_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
@@ -108,6 +109,7 @@ class Polls(commands.Cog):
         await self.db.conn.commit()
 
         await interaction.response.send_message(f"✅ Голосование создано!", ephemeral=True)
+        await award_achievement(self.db, str(interaction.guild.id), str(interaction.user.id), "first_poll", interaction.user)
 
     @app_commands.command(name="poll_end", description="Завершить голосование")
     @app_commands.describe(message_id="ID сообщения с голосованием")
@@ -202,6 +204,8 @@ class Polls(commands.Cog):
                         (poll_id, user_id, option_index, datetime.now(timezone.utc).isoformat())
                     )
                     await self.db.conn.commit()
+                    member = interaction.user
+                    await award_achievement(self.db, str(interaction.guild.id), str(member.id), "poll_vote", member)
                     return await interaction.response.send_message(
                         f"✅ Голос за **{options[option_index]}** засчитан!", ephemeral=True
                     )
@@ -217,6 +221,8 @@ class Polls(commands.Cog):
                     (poll_id, user_id, option_index, datetime.now(timezone.utc).isoformat())
                 )
                 await self.db.conn.commit()
+                member = interaction.user
+                await award_achievement(self.db, str(interaction.guild.id), str(member.id), "poll_vote", member)
                 return await interaction.response.send_message(
                     f"✅ Ваш голос: **{options[option_index]}**", ephemeral=True
                 )

@@ -6,6 +6,7 @@ from discord import app_commands
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
+from cogs.achievements import award_achievement
 
 
 class TicketCloseView(discord.ui.View):
@@ -218,6 +219,10 @@ class Tickets(commands.Cog):
         await interaction.followup.send(f"✅ Тикет создан: {ticket_channel.mention}", ephemeral=True)
 
         await self._log_ticket("created", guild, user, ticket_number, cat_name)
+
+        await award_achievement(self.db, str(guild.id), str(user.id), "first_ticket", user)
+        if await self.db.count_tickets(str(guild.id), str(user.id)) >= 5:
+            await award_achievement(self.db, str(guild.id), str(user.id), "tickets_5", user)
 
     async def _close_ticket(self, interaction: discord.Interaction, ticket_number: int):
         guild = interaction.guild

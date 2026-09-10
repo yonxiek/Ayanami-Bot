@@ -534,6 +534,27 @@ class SetupChatView(discord.ui.View):
 
     @discord.ui.select(
         cls=discord.ui.Select,
+        placeholder="🌐 Провайдер ИИ",
+        min_values=1, max_values=1,
+        options=[
+            discord.SelectOption(label="Google Gemini", value="gemini", emoji="🔮", description="Бесплатный ключ AI Studio"),
+            discord.SelectOption(label="OpenAI GPT", value="openai", emoji="🤖", description="Нужен OPENAI_API_KEY"),
+            discord.SelectOption(label="DeepSeek", value="deepseek", emoji="🧠", description="Доступный вариант"),
+        ],
+        row=1
+    )
+    async def select_provider(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer(ephemeral=True)
+        value = select.values[0]
+        await self.db.update_config_field(str(self.guild_id), "ai_provider", value)
+        await log_settings_change(
+            interaction, "Чат с ИИ",
+            f"**Действие:** выбран провайдер ИИ\n**Провайдер:** {value}"
+        )
+        await interaction.followup.send(f"✅ Провайдер ИИ: **{value}**.", ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.Select,
         placeholder="⏱️ Кулдаун между ответами ИИ",
         min_values=1, max_values=1,
         options=[
@@ -572,22 +593,32 @@ class SetupChatView(discord.ui.View):
 
     @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from config import GEMINI_API_KEY, GEMINI_MODEL
+        from config import GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, DEEPSEEK_API_KEY, AI_PROVIDER
         guild_cfg = await self.db.get_guild_config(str(self.guild_id))
         enabled = guild_cfg.get("chat_enabled", False)
         ch = guild_cfg.get("chat_channel_id")
         cooldown = guild_cfg.get("chat_cooldown_seconds", 3)
+        provider = guild_cfg.get("ai_provider") or AI_PROVIDER
         has_key = bool(GEMINI_API_KEY)
+
+        provider_colors = {"gemini": "🔮", "openai": "🤖", "deepseek": "🧠"}
+        key_status = {
+            "gemini": ("🟢 задан" if GEMINI_API_KEY else "❌ NЕ задан"),
+            "openai": ("✅ задан" if OPENAI_API_KEY else "❌ не задан"),
+            "deepseek": ("✅ задан" if DEEPSEEK_API_KEY else "❌ не задан"),
+        }
 
         lines = [
             f"### Чат с ИИ",
             f"**Статус:** {'🟢 Включён' if enabled else '🔴 Выключен'}",
             f"**Канал:** {f'<#{ch}>' if ch else 'любой (по упоминанию бота)'}",
             f"**Кулдаун:** {cooldown} с",
+            f"**Провайдер:** {provider_colors.get(provider, '🌐')} `{provider}`",
             f"**Модель:** `{GEMINI_MODEL}`",
-            f"**API-ключ:** {'✅ задан' if has_key else '❌ НЕ задан (см. `.env` → GEMINI_API_KEY)'}",
+            f"**Ключ провайдера:** {key_status.get(provider, '❓')}",
+            f"**Ключ Gemini:** {'✅ задан' if has_key else '❌ не задан'}",
             "",
-            "Бесплатный ключ: https://aistudio.google.com/apikey",
+            "Ключи задаются в `.env`: GEMINI_API_KEY, OPENAI_API_KEY или DEEPSEEK_API_KEY.",
         ]
         embed = discord.Embed(title="🗣️ Чат с ИИ", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")

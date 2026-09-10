@@ -6,6 +6,7 @@ from discord import app_commands
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
+from cogs.achievements import award_achievement
 
 
 RARITY_CONFIG = {
@@ -105,6 +106,12 @@ class Collectibles(commands.Cog):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         await interaction.followup.send(embed=embed)
+
+        await award_achievement(self.db, guild_id, user_id, "first_card", interaction.user)
+        if selected["rarity"] == "legendary":
+            await award_achievement(self.db, guild_id, user_id, "legendary_card", interaction.user)
+        if await self.db.count_unique_cards(guild_id, user_id) >= 10:
+            await award_achievement(self.db, guild_id, user_id, "cards_10", interaction.user)
 
     @app_commands.command(name="card_inventory", description="Моя коллекция карточек")
     async def card_inventory(self, interaction: discord.Interaction, member: discord.Member = None):

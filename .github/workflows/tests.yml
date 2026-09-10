@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          # lxml и сборки easy-pil требуют системных пакетов
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libfreetype6-dev
+          pip install -r requirements-dev.txt
+
+      - name: Синтаксическая проверка
+        run: |
+          python -m compileall -q cogs
+          python -m compileall -q main.py db.py config.py ai_client.py prefix_adapter.py ui_components.py
+
+      - name: Запуск тестов
+        run: python -m pytest -q

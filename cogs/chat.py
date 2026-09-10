@@ -1,13 +1,15 @@
 import time
+import json
+import aiohttp
 from collections import deque
 
-import aiohttp
 import discord
 from discord.ext import commands
+from discord import app_commands
 from db import Database
 import config
-
-API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+import ai_client
+from prefix_adapter import InteractionAdapter
 
 DEFAULT_SYSTEM_PROMPT = (
     "Ты — Аянами, дружелюбный Discord-бот русского сервера «{server}». "
@@ -22,16 +24,12 @@ class Chat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
-        self.api_key = config.GEMINI_API_KEY
-        self.model = config.GEMINI_MODEL
         self.history: dict[tuple, deque] = {}
         self.cooldowns: dict[tuple, float] = {}
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if not message.guild or message.author.bot:
-            return
-        if not self.api_key:
             return
 
         config_data = await self.db.get_guild_config(str(message.guild.id))
@@ -74,49 +72,59 @@ class Chat(commands.Cog):
         return (message.guild.id, message.channel.id)
 
     async def _ask_ai(self, message: discord.Message) -> str | None:
+        guild_id = str(message.guild.id)
+        config_data = await self.db.get_guild_config(guild_id)
+        provider = ai_client.normalize_provider(config_data.get("ai_provider"))
+
         hist_key = self._history_key(message)
         history = self.history.setdefault(hist_key, deque(maxlen=HISTORY_LIMIT))
 
         system_prompt = DEFAULT_SYSTEM_PROMPT.format(server=message.guild.name)
-        contents = [{"role": m["role"], "parts": [{"text": m["text"]}]} for m in history]
-        contents.append({"role": "user", "parts": [{"text": message.content[:800]}]})
-
-        body = {
-            "contents": contents,
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 250},
-        }
-        headers = {"Content-Type": "application/json"}
-        url = API_URL.format(model=self.model)
+        messages = list(history)
+        messages.append({"role": "user", "content": message.content[:800]})
 
         try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(f"{url}?key={self.api_key}", json=body, headers=headers) as resp:
-                    if resp.status != 200:
-                        err_text = await resp.text()
-                        print(f"❌ Gemini API {resp.status}: {err_text[:300]}")
-                        if resp.status in (401, 403):
-                            return "🔑 У меня не настроен API-ключ ИИ. Попросите администраторов проверить `GEMINI_API_KEY`."
-                        if resp.status == 429:
-                            return "😮💨 Слишком много запросов к ИИ — попробуйте чуть позже."
-                        return "🤖 Я не смогла ответить — ошибка модели. Попробуйте позже."
-                    data = await resp.json()
-
-            try:
-                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except (KeyError, IndexError, TypeError):
-                return "🤖 Модель не вернула ответ. Попробуйте ещё раз."
-
-            if not text:
-                return "🤖 …"
+            reply = await ai_client.complete(
+                system_prompt,
+                messages,
+                provider=provider,
+                temperature=0.9,
+                max_tokens=250,
+            )
         except Exception:
             return "🤖 Похоже, сеть упала. Попробуйте позже."
 
-        history.append({"role": "user", "text": message.content[:800]})
-        history.append({"role": "model", "text": text[:800]})
+        if reply is None:
+            return "🤖 Не удалось получить ответ от ИИ. Проверьте настройки провайдера (`/setup` или `.env`)."
+        if not reply.strip():
+            return "🤖 Модель не вернула ответ. Попробуйте ещё раз."
 
-        return text[:1800]
+        history.append({"role": "user", "text": message.content[:800]})
+        history.append({"role": "model", "text": reply[:800]})
+
+        return reply[:1800]
+
+    @app_commands.command(name="ai_provider", description="Выбрать ИИ-провайдера для этого сервера")
+    @app_commands.describe(provider="Провайдер ИИ")
+    @app_commands.choices(provider=[
+        app_commands.Choice(name="Google Gemini (по умолчанию)", value="gemini"),
+        app_commands.Choice(name="OpenAI GPT", value="openai"),
+        app_commands.Choice(name="DeepSeek", value="deepseek"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def ai_provider(self, interaction: discord.Interaction, provider: app_commands.Choice[str]):
+        guild_id = str(interaction.guild.id)
+        val = provider.value
+        await self.db.update_config_field(guild_id, "ai_provider", val)
+        available = ai_client._api_key_for(val)
+        status = f"✅ Провайдер: **{provider.name}**" if available else f"⚠️ Провайдер: **{provider.name}** (ключ не задан в `.env`)"
+        await interaction.response.send_message(status, ephemeral=True)
+
+    @commands.command(name="ai_provider")
+    @commands.has_permissions(administrator=True)
+    async def ai_provider_prefix(self, ctx, provider: str = "gemini"):
+        from prefix_adapter import make_choice
+        await self.ai_provider.callback(self, InteractionAdapter(ctx), make_choice(provider))
 
 
 async def setup(bot):

@@ -6,6 +6,7 @@ from discord import app_commands
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
+from cogs.achievements import award_achievement
 
 
 class EventRSVPView(discord.ui.View):
@@ -93,6 +94,7 @@ class ServerEvents(commands.Cog):
         await self.db.conn.commit()
 
         await interaction.response.send_message(f"✅ Событие создано в {target_channel.mention}!", ephemeral=True)
+        await award_achievement(self.db, str(interaction.guild.id), str(interaction.user.id), "first_event", interaction.user)
 
     @app_commands.command(name="event_list", description="Список активных событий")
     async def event_list(self, interaction: discord.Interaction):
@@ -154,6 +156,8 @@ class ServerEvents(commands.Cog):
 
         labels = {"going": "✅ Вы идёте!", "maybe": "❓ Может быть", "not_going": "❌ Не идёте"}
         await interaction.followup.send(labels.get(response_type, "Голос записан."), ephemeral=True)
+        if response_type == "going":
+            await award_achievement(self.db, str(interaction.guild.id), str(interaction.user.id), "event_rsvp", interaction.user)
 
     def _parse_event_time(self, text: str) -> datetime | None:
         now = datetime.now(timezone.utc)
