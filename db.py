@@ -385,8 +385,24 @@ class Database:
             try:
                 await self.conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}')
             except Exception:
-                pass 
-            
+                pass
+
+        # Миграция старой схемы напоминаний (remind_time/message/completed -> remind_at/text/done)
+        try:
+            cursor = await self.conn.execute("PRAGMA table_info(reminders)")
+            cols = {row[1] for row in await cursor.fetchall()}
+            if 'remind_at' not in cols and 'remind_time' in cols:
+                await self.conn.execute('ALTER TABLE reminders ADD COLUMN remind_at TEXT')
+                await self.conn.execute('UPDATE reminders SET remind_at = remind_time WHERE remind_at IS NULL')
+            if 'text' not in cols and 'message' in cols:
+                await self.conn.execute('ALTER TABLE reminders ADD COLUMN text TEXT')
+                await self.conn.execute('UPDATE reminders SET text = message WHERE text IS NULL')
+            if 'done' not in cols and 'completed' in cols:
+                await self.conn.execute('ALTER TABLE reminders ADD COLUMN done INTEGER DEFAULT 0')
+                await self.conn.execute('UPDATE reminders SET done = completed')
+        except Exception:
+            pass
+
         await self.conn.commit()
 
     async def mark_raid_attendance(self, guild_id: str, user_id: str, raid_msg_id: str) -> bool:

@@ -95,3 +95,59 @@ async def test_count_tickets(db):
     await db.conn.commit()
     assert await db.count_tickets("111", "222") == 3
     assert await db.count_tickets("111", "999") == 0
+
+
+async def test_reminders_schema_migration(tmp_path):
+    """Старая БД (remind_time/message/completed) должна мигрировать при init_db."""
+    import aiosqlite
+    from db import Database
+
+    old_path = str(tmp_path / "old.db")
+    conn = await aiosqlite.connect(old_path)
+    await conn.execute(
+        'CREATE TABLE reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, '
+        'user_id TEXT, channel_id TEXT, remind_time TEXT, message TEXT, created_at TEXT, completed INTEGER)')
+    await conn.execute(
+        "INSERT INTO reminders (guild_id, user_id, channel_id, remind_time, message, created_at, completed) "
+        "VALUES ('111', '222', '333', '2099-01-01T00:00:00+00:00', 'тест', '2026-01-01', 0)")
+    await conn.commit()
+    await conn.close()
+
+    Database._instance = None
+    db = Database(old_path)
+    await db.init_db()
+
+    assert await db.get_active_reminder_count("222") == 1
+    rows = await db.get_due_reminders()
+    assert len(rows) == 0
+    await db.clear_expired_reminders()
+    if db.conn:
+        await db.conn.close()
+
+
+async def test_reminders_old_rows_carried_over(tmp_path):
+    """Завершённые старые напоминания должны получить done = 1."""
+    import aiosqlite
+    from db import Database
+
+    old_path = str(tmp_path / "old2.db")
+    conn = await aiosqlite.connect(old_path)
+    await conn.execute(
+        'CREATE TABLE reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, '
+        'user_id TEXT, channel_id TEXT, remind_time TEXT, message TEXT, created_at TEXT, completed INTEGER)')
+    await conn.execute(
+        "INSERT INTO reminders (guild_id, user_id, channel_id, remind_time, message, created_at, completed) "
+        "VALUES ('111', '222', '333', '2020-01-01T00:00:00+00:00', 'старое', '2026-01-01', 1)")
+    await conn.commit()
+    await conn.close()
+
+    Database._instance = None
+    db = Database(old_path)
+    await db.init_db()
+
+    assert await db.get_active_reminder_count("222") == 0
+    await db.clear_expired_reminders(keep_days=0)
+    rows = await db.get_user_reminders("222")
+    assert rows == []
+    if db.conn:
+        await db.conn.close()
