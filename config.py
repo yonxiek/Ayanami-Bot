@@ -67,6 +67,22 @@ GEMINI_API_KEY: str = get("GEMINI_API_KEY", "") or ""
 #: Модель Gemini (на случай смены доступных моделей)
 GEMINI_MODEL: str = get("GEMINI_MODEL", "gemini-2.0-flash") or "gemini-2.0-flash"
 
+# --- Музыка (Lavalink, опционально) ---
+#: Хост Lavalink-сервера (пусто = музыка отключена)
+LAVALINK_HOST: str = get("LAVALINK_HOST", "") or ""
+#: Порт Lavalink-сервера
+LAVALINK_PORT: int = get_int("LAVALINK_PORT", 2333)
+#: Пароль Lavalink-сервера
+LAVALINK_PASSWORD: str = get("LAVALINK_PASSWORD", "youshallnotpass") or "youshallnotpass"
+
+# --- Веб-дашборд (опционально) ---
+#: Секретный ключ для веб-дашборда
+DASHBOARD_SECRET: str = get("DASHBOARD_SECRET", "") or ""
+#: Хост для веб-дашборда
+DASHBOARD_HOST: str = get("DASHBOARD_HOST", "127.0.0.1") or "127.0.0.1"
+#: Порт для веб-дашборда
+DASHBOARD_PORT: int = get_int("DASHBOARD_PORT", 8080)
+
 
 def require_token() -> str:
     """Вернуть токен или поднять ошибку, если он не задан."""

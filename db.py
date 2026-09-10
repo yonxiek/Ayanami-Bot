@@ -216,6 +216,116 @@ class Database:
                 voice_minutes INTEGER DEFAULT 0,
                 commands INTEGER DEFAULT 0,
                 PRIMARY KEY (guild_id, user_id, week_key)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                channel_id TEXT,
+                ticket_number INTEGER,
+                category_name TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TEXT,
+                closed_at TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS polls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                creator_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                question TEXT,
+                options TEXT,
+                multi_select INTEGER DEFAULT 0,
+                anonymous INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'active',
+                created_at TEXT,
+                ends_at TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS poll_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                poll_id INTEGER,
+                user_id TEXT,
+                option_index INTEGER,
+                created_at TEXT,
+                UNIQUE(poll_id, user_id, option_index)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS clans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                name TEXT,
+                tag TEXT,
+                leader_id TEXT,
+                description TEXT DEFAULT '',
+                icon TEXT DEFAULT '⚔️',
+                balance INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 1,
+                exp INTEGER DEFAULT 0,
+                created_at TEXT,
+                UNIQUE(guild_id, name),
+                UNIQUE(guild_id, tag)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS clan_members (
+                guild_id TEXT,
+                user_id TEXT,
+                clan_id INTEGER,
+                role TEXT DEFAULT 'member',
+                joined_at TEXT,
+                PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS collectible_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                card_id TEXT,
+                name TEXT,
+                description TEXT DEFAULT '',
+                rarity TEXT DEFAULT 'common',
+                emoji TEXT DEFAULT '🃏',
+                image_url TEXT,
+                drop_rate REAL DEFAULT 0.1,
+                enabled INTEGER DEFAULT 1,
+                PRIMARY KEY (guild_id, card_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS user_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                card_id TEXT,
+                quantity INTEGER DEFAULT 1,
+                obtained_at TEXT,
+                UNIQUE(guild_id, user_id, card_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS ai_moderation_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                original_text TEXT,
+                action TEXT,
+                reason TEXT,
+                confidence REAL,
+                created_at TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS server_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                creator_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                name TEXT,
+                description TEXT DEFAULT '',
+                starts_at TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS event_rsvps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER,
+                user_id TEXT,
+                response TEXT,
+                created_at TEXT,
+                UNIQUE(event_id, user_id)
             )'''
         ]
         

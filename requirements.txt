@@ -5,3 +5,6 @@ easy-pil
 aiohttp
 PyNaCl
 python-dotenv
+wavelink>=3.3.3
+aiofiles
+requests
