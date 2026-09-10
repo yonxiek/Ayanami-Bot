@@ -1,7 +1,6 @@
 import aiohttp
 import discord
 import base64
-import json as json_mod
 from discord.ext import commands
 from discord import app_commands
 from db import Database
@@ -9,13 +8,22 @@ from ui_components import Colors
 import config
 import ai_client
 
-IMAGEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+IMAGEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
+IMAGEN_MODELS = ["imagen-3.0-generate-002", "imagen-4.0-generate-001", "imagen-3.0-generate-001"]
 
 PROVIDER_LABELS = {
     "gemini": "Google Gemini",
     "openai": "OpenAI GPT",
     "deepseek": "DeepSeek",
 }
+
+
+def _detect_image_ext(data: bytes) -> str:
+    if data[:4] == b"\x89PNG":
+        return ".png"
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    return ".png"
 
 
 class AIImageModal(discord.ui.Modal, title="🎨 Генерация изображения"):
@@ -135,7 +143,6 @@ class AIImageGeneration(commands.Cog):
         self.bot = bot
         self.db = Database()
         self.api_key = config.GEMINI_API_KEY
-        self.model = "gemini-2.0-flash-exp"  # модель с поддержкой изображений
 
     @app_commands.command(name="ai", description="Меню ИИ: изображения, модерация, провайдер")
     async def ai_hub(self, interaction: discord.Interaction):
@@ -167,68 +174,63 @@ class AIImageGeneration(commands.Cog):
                 "❌ Не настроен API-ключ Gemini. Обратитесь к администратору.", ephemeral=True
             )
 
-        full_prompt = (
-            f"Сгенерируй изображение по описанию. Стиль: {style}.\n"
-            f"Описание: {prompt}\n\n"
-            f"Ответь ТОЛЬКО JSON: {{\"image_base64\": \"<base64 изображения>\", \"text\": \"<описание>\"}}"
-        )
-
+        full_prompt = f"Сгенерируй изображение по описанию. Стиль: {style}. Описание: {prompt}"
         body = {
-            "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048},
+            "instances": [{"prompt": full_prompt}],
+            "parameters": {
+                "sampleCount": 1,
+                "aspectRatio": "1:1",
+                "personGeneration": "allow_all",
+            },
         }
-        headers = {"Content-Type": "application/json"}
-        url = IMAGEN_URL.format(model=self.model)
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(f"{url}?key={self.api_key}", json=body, headers=headers) as resp:
-                    if resp.status != 200:
-                        err = await resp.text()
-                        print(f"Imagen API error {resp.status}: {err[:300]}")
-                        return await interaction.followup.send(
-                            "❌ Ошибка генерации. Возможно, модель не поддерживает изображения.",
-                            ephemeral=True
-                        )
-                    data = await resp.json()
-
+        last_error = ""
+        for model in IMAGEN_MODELS:
             try:
-                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except (KeyError, IndexError):
-                return await interaction.followup.send("❌ Модель не вернула ответ.", ephemeral=True)
+                timeout = aiohttp.ClientTimeout(total=60)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(
+                        IMAGEN_URL.format(model=model),
+                        params={"key": self.api_key},
+                        json=body,
+                    ) as resp:
+                        if resp.status == 404:
+                            continue
+                        if resp.status != 200:
+                            last_error = f"{resp.status}: {await resp.text()}"
+                            print(f"Imagen {model} error {resp.status}: {last_error[:300]}")
+                            continue
+                        data = await resp.json()
 
-            # Попытка извлечь base64
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start != -1 and end > start:
-                result = json_mod.loads(text[start:end])
-                img_b64 = result.get("image_base64", "")
-                desc = result.get("text", "")
-                if img_b64:
-                    img_bytes = base64.b64decode(img_b64)
-                    file = discord.File(img_bytes, filename="generated.png")
-                    embed = discord.Embed(
-                        title=f"🎨 {prompt[:100]}",
-                        description=desc[:500] if desc else "",
-                        color=Colors.MAIN,
-                    )
-                    embed.set_image(url="attachment://generated.png")
-                    embed.set_footer(text=f"Стиль: {style}")
-                    return await interaction.followup.send(embed=embed, file=file)
+                try:
+                    img_b64 = data["predictions"][0]["bytesBase64Encoded"]
+                except (KeyError, IndexError):
+                    last_error = "пустой ответ от API"
+                    continue
+                if not img_b64:
+                    last_error = "пустое изображение в ответе"
+                    continue
 
-            # Fallback: текстовое описание
-            embed = discord.Embed(
-                title=f"🎨 Описание: {prompt[:100]}",
-                description=text[:2000],
-                color=Colors.MAIN,
-            )
-            embed.set_footer(text=f"Стиль: {style}")
-            await interaction.followup.send(embed=embed)
+                img_bytes = base64.b64decode(img_b64)
+                ext = _detect_image_ext(img_bytes)
+                file = discord.File(img_bytes, filename=f"generated{ext}")
+                embed = discord.Embed(
+                    title=f"🎨 {prompt[:100]}",
+                    description=f"*{style}*",
+                    color=Colors.MAIN,
+                )
+                embed.set_image(url=f"attachment://generated{ext}")
+                embed.set_footer(text=f"Модель: {model} • Стиль: {style}")
+                return await interaction.followup.send(embed=embed, file=file)
 
-        except Exception as e:
-            print(f"Imagen error: {e}")
-            await interaction.followup.send("❌ Ошибка при генерации изображения.", ephemeral=True)
+            except Exception as e:
+                last_error = str(e)
+                print(f"Imagen error: {e}")
+
+        await interaction.followup.send(
+            f"❌ Ошибка генерации: {last_error or 'не удалось получить изображение'}. Попробуйте ещё раз.",
+            ephemeral=True,
+        )
 
 
 async def setup(bot):
