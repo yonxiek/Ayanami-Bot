@@ -17,32 +17,6 @@ class GitHubIntegration(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    @app_commands.command(name="github_repo", description="Информация о GitHub-репозитории")
-    @app_commands.describe(repo="Репозиторий (owner/name)")
-    async def github_repo(self, interaction: discord.Interaction, repo: str):
-        await interaction.response.defer()
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{GITHUB_API}/repos/{repo}", timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 404:
-                    return await interaction.followup.send("❌ Репозиторий не найден.", ephemeral=True)
-                if resp.status != 200:
-                    return await interaction.followup.send("❌ Ошибка API GitHub.", ephemeral=True)
-                data = await resp.json()
-
-        embed = discord.Embed(
-            title=f"📦 {data['full_name']}",
-            description=data.get("description", "Нет описания")[:500],
-            url=data["html_url"],
-            color=Colors.MAIN,
-        )
-        embed.add_field(name="⭐ Звёзды", value=str(data.get("stargazers_count", 0)), inline=True)
-        embed.add_field(name="🍴 Форки", value=str(data.get("forks_count", 0)), inline=True)
-        embed.add_field(name="🐛 Issues", value=str(data.get("open_issues_count", 0)), inline=True)
-        embed.add_field(name="🌐 Язык", value=data.get("language", "Не указан"), inline=True)
-        embed.add_field(name="📋 Лицензия", value=(data.get("license") or {}).get("name", "Не указана"), inline=True)
-        embed.set_footer(text=f"Создан: {data.get('created_at', '')[:10]}")
-        await interaction.followup.send(embed=embed)
-
     @app_commands.command(name="github_commits", description="Последние коммиты репозитория")
     @app_commands.describe(repo="Репозиторий (owner/name)", count="Количество (макс. 10)")
     async def github_commits(self, interaction: discord.Interaction, repo: str, count: int = 5):
@@ -133,40 +107,9 @@ class GitHubIntegration(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="github_track", description="Настроить отслеживание репозитория в канале")
-    @app_commands.describe(repo="Репозиторий (owner/name)", channel="Канал для уведомлений")
-    @app_commands.default_permissions(administrator=True)
-    async def github_track(self, interaction: discord.Interaction, repo: str, channel: discord.TextChannel):
-        config = await self.db.get_guild_config(str(interaction.guild.id))
-        tracked = config.get("github_tracked_repos", [])
-        # Проверяем дубликат
-        for t in tracked:
-            if t["repo"] == repo:
-                return await interaction.response.send_message("❌ Этот репозиторий уже отслеживается.", ephemeral=True)
-        tracked.append({"repo": repo, "channel_id": str(channel.id)})
-        await self.db.update_config_field(str(interaction.guild.id), "github_tracked_repos", tracked)
-        await interaction.response.send_message(f"✅ Отслеживание **{repo}** настроено в {channel.mention}", ephemeral=True)
-
-    @app_commands.command(name="github_untrack", description="Прекратить отслеживание репозитория")
-    @app_commands.describe(repo="Репозиторий (owner/name)")
-    @app_commands.default_permissions(administrator=True)
-    async def github_untrack(self, interaction: discord.Interaction, repo: str):
-        config = await self.db.get_guild_config(str(interaction.guild.id))
-        tracked = config.get("github_tracked_repos", [])
-        before = len(tracked)
-        tracked = [t for t in tracked if t["repo"] != repo]
-        if len(tracked) == before:
-            return await interaction.response.send_message("❌ Репозиторий не найден в списке отслеживания.", ephemeral=True)
-        await self.db.update_config_field(str(interaction.guild.id), "github_tracked_repos", tracked)
-        await interaction.response.send_message(f"✅ Отслеживание **{repo}** прекращено.", ephemeral=True)
-
     # ==========================================================
     #                ПРЕФИКСНЫЕ КОМАНДЫ
     # ==========================================================
-
-    @commands.command(name="github_repo")
-    async def github_repo_prefix(self, ctx, repo: str):
-        await self.github_repo.callback(self, InteractionAdapter(ctx), repo)
 
     @commands.command(name="github_commits")
     async def github_commits_prefix(self, ctx, repo: str, count: int = 5):

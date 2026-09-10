@@ -1,15 +1,10 @@
 import time
-import json
-import aiohttp
 from collections import deque
 
 import discord
 from discord.ext import commands
-from discord import app_commands
 from db import Database
-import config
 import ai_client
-from prefix_adapter import InteractionAdapter
 
 DEFAULT_SYSTEM_PROMPT = (
     "Ты — Аянами, дружелюбный Discord-бот русского сервера «{server}». "
@@ -103,28 +98,6 @@ class Chat(commands.Cog):
         history.append({"role": "model", "text": reply[:800]})
 
         return reply[:1800]
-
-    @app_commands.command(name="ai_provider", description="Выбрать ИИ-провайдера для этого сервера")
-    @app_commands.describe(provider="Провайдер ИИ")
-    @app_commands.choices(provider=[
-        app_commands.Choice(name="Google Gemini (по умолчанию)", value="gemini"),
-        app_commands.Choice(name="OpenAI GPT", value="openai"),
-        app_commands.Choice(name="DeepSeek", value="deepseek"),
-    ])
-    @app_commands.default_permissions(administrator=True)
-    async def ai_provider(self, interaction: discord.Interaction, provider: app_commands.Choice[str]):
-        guild_id = str(interaction.guild.id)
-        val = provider.value
-        await self.db.update_config_field(guild_id, "ai_provider", val)
-        available = ai_client._api_key_for(val)
-        status = f"✅ Провайдер: **{provider.name}**" if available else f"⚠️ Провайдер: **{provider.name}** (ключ не задан в `.env`)"
-        await interaction.response.send_message(status, ephemeral=True)
-
-    @commands.command(name="ai_provider")
-    @commands.has_permissions(administrator=True)
-    async def ai_provider_prefix(self, ctx, provider: str = "gemini"):
-        from prefix_adapter import make_choice
-        await self.ai_provider.callback(self, InteractionAdapter(ctx), make_choice(provider))
 
 
 async def setup(bot):

@@ -5,6 +5,8 @@ from ui_components import AyanamiUI, Icons, Colors
 from db import Database
 import config
 from datetime import datetime
+import aiohttp
+import json as _json
 
 
 async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
@@ -94,9 +96,9 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Тикеты", value="tickets", emoji="📩", description="Категории, роль поддержки, канал логов"),
             discord.SelectOption(label="ИИ-модерация", value="ai_mod", emoji="🛡️", description="Авто-проверка сообщений через Gemini"),
             discord.SelectOption(label="Кланы", value="clans", emoji="⚔️", description="Настройка кланов сервера"),
-            discord.SelectOption(label="Голосования", value="polls", emoji="🗳️", description="Тип голосований по умолчанию"),
-            discord.SelectOption(label="События", value="events", emoji="🎉", description="Настройки событий и RSVP"),
             discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
+            discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
+            discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
         ]
         select = discord.ui.Select(placeholder="Выберите модуль для настройки...", options=options)
         select.callback = self.menu_callback
@@ -131,9 +133,9 @@ class DashboardView(discord.ui.LayoutView):
             "tickets": lambda: SetupTicketsView(self.cog, db, self.guild_id),
             "ai_mod": lambda: SetupAIModView(self.cog, db, self.guild_id),
             "clans": lambda: SetupClansView(self.cog, db, self.guild_id),
-            "polls": lambda: SetupPollsView(self.cog, db, self.guild_id),
-            "events": lambda: SetupEventsView(self.cog, db, self.guild_id),
             "cards": lambda: SetupCardsView(self.cog, db, self.guild_id),
+            "github": lambda: SetupGithubView(self.cog, db, self.guild_id),
+            "webhooks": lambda: SetupWebhookView(self.cog, db, self.guild_id),
         }
 
         if val == "perms":
@@ -3208,16 +3210,32 @@ class SetupTicketsView(discord.ui.View):
         config = await self.db.get_guild_config(str(self.guild_id))
         categories = config.get("ticket_categories", [])
         if not categories:
-            desc = "*Категорий нет. Создайте командой `/ticket_category add`, указав название и ID Discord-категории.*"
+            desc = "*Категорий нет. Нажмите «Добавить категорию».*"
         else:
             desc = ""
             for i, cat in enumerate(categories, 1):
                 desc += f"> **{i}.** {cat.get('emoji', '📩')} {cat['name']} — {cat.get('description', '')} (ID: {cat.get('category_id', 0)})\n"
         embed = discord.Embed(title="📁 Категории тикетов", description=desc, color=Colors.MAIN)
-        embed.set_footer(text="Панель создаётся командой /ticket_panel")
+        embed.set_footer(text="ID Discord-категории указывается при добавлении")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    @discord.ui.button(label="Добавить категорию", emoji="➕", style=discord.ButtonStyle.success, row=2)
+    async def btn_category_add(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TicketCategoryModal("add"))
+
+    @discord.ui.button(label="Удалить категорию", emoji="🗑️", style=discord.ButtonStyle.danger, row=2)
+    async def btn_category_remove(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TicketCategoryModal("remove"))
+
+    @discord.ui.button(label="Отправить панель", emoji="📨", style=discord.ButtonStyle.blurple, row=3)
+    async def btn_send_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("Tickets")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль тикетов отключен.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await cog._send_panel(interaction)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=3)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
         log_ch = config.get("ticket_log_channel_id")
@@ -3230,9 +3248,9 @@ class SetupTicketsView(discord.ui.View):
             f"**Категорий:** {len(categories)}",
             "",
             "**Как настроить:**",
-            "1. `/ticket_category add` — добавить категории",
-            "2. `/ticket_setlog` — канал логов",
-            "3. `/ticket_panel` — отправить панель в канал",
+            "1. «Добавить категорию» — указать название и ID Discord-категории",
+            "2. Канал логов — выбрать в меню выше",
+            "3. «Отправить панель» — панель отправится в текущий канал",
         ]
         embed = discord.Embed(title="📩 Тикеты — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
@@ -3268,6 +3286,26 @@ class SetupAIModView(discord.ui.View):
         )
         await interaction.followup.send(f"✅ ИИ-модерация {'включена' if value else 'выключена'}.", ephemeral=True)
 
+    @discord.ui.button(label="Журнал", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_log(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cursor = await self.db.conn.execute(
+            "SELECT user_id, action, reason, confidence, created_at FROM ai_moderation_log "
+            "WHERE guild_id = ? ORDER BY created_at DESC LIMIT 25",
+            (str(self.guild_id),)
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.response.send_message("📭 Записей нет.", ephemeral=True)
+
+        action_emojis = {"delete": "🗑️", "warn": "⚠️", "mute": "🔇", "none": "✅"}
+        lines = []
+        for r in rows:
+            emoji = action_emojis.get(r["action"], "❓")
+            lines.append(f"{emoji} <@{r['user_id']}> — {r['action']} ({r['confidence']:.0%}) — {r['reason'][:50]}")
+
+        embed = discord.Embed(title="🤖 Журнал AI-модерации", description="\n".join(lines), color=Colors.MAIN)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         from config import GEMINI_API_KEY
@@ -3284,7 +3322,7 @@ class SetupAIModView(discord.ui.View):
             "• **mute** — серьёзные нарушения (тайм-аут 10 мин)",
             "",
             "Модераторы и админы не проверяются.",
-            "Журнал: `/ai_mod_log`",
+            "Журнал и быстрые переключатели также доступны в `/ai`.",
         ]
         embed = discord.Embed(title="🛡️ ИИ-модерация — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
@@ -3352,92 +3390,6 @@ class SetupClansView(discord.ui.View):
 
 
 # ==========================================
-#   ГОЛОСОВАНИЯ
-# ==========================================
-
-class SetupPollsView(discord.ui.View):
-    def __init__(self, cog, db: Database, guild_id: int):
-        super().__init__(timeout=300)
-        self.cog = cog
-        self.db = db
-        self.guild_id = guild_id
-        self.add_item(BackButton())
-
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=0)
-    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cursor = await self.db.conn.execute(
-            "SELECT COUNT(*) FROM polls WHERE guild_id = ?", (str(self.guild_id),)
-        )
-        row = await cursor.fetchone()
-        polls_count = row[0] if row else 0
-        cursor = await self.db.conn.execute(
-            "SELECT COUNT(*) FROM polls WHERE guild_id = ? AND status = 'active'", (str(self.guild_id),)
-        )
-        row = await cursor.fetchone()
-        active = row[0] if row else 0
-        lines = [
-            "### Голосования",
-            f"**Всего создано:** {polls_count}",
-            f"**Активных:** {active}",
-            "",
-            "**Как пользоваться:**",
-            "• `/poll question | опция1; опция2; опция3` — создать (до 10 вариантов)",
-            "• параметры `multi_select` и `anonymous`",
-            "• `/poll_results` — промежуточные итоги",
-            "• `/poll_end` — завершить и показать результат",
-        ]
-        embed = discord.Embed(title="🗳️ Голосования — настройки", description="\n".join(lines), color=Colors.MAIN)
-        embed.set_footer(text="Ayanami System")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-# ==========================================
-#   СОБЫТИЯ
-# ==========================================
-
-class SetupEventsView(discord.ui.View):
-    def __init__(self, cog, db: Database, guild_id: int):
-        super().__init__(timeout=300)
-        self.cog = cog
-        self.db = db
-        self.guild_id = guild_id
-        self.add_item(BackButton())
-
-    @discord.ui.button(label="Активные события", emoji="🎉", style=discord.ButtonStyle.blurple, row=0)
-    async def btn_active(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        cursor = await self.db.conn.execute(
-            "SELECT id, name, starts_at, creator_id FROM server_events "
-            "WHERE guild_id = ? AND status = 'active' ORDER BY starts_at", (str(self.guild_id),)
-        )
-        rows = await cursor.fetchall()
-        if not rows:
-            return await interaction.followup.send("📭 Активных событий нет.", ephemeral=True)
-        lines = []
-        for r in rows:
-            t = f"<t:{int(datetime.fromisoformat(r['starts_at']).timestamp())}:R>" if r["starts_at"] else "без даты"
-            lines.append(f"**#{r['id']}** {r['name']} — {t} (орг: <@{r['creator_id']}>)")
-        embed = discord.Embed(title="🎉 Активные события", description="\n".join(lines), color=Colors.MAIN)
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
-    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        lines = [
-            "### События",
-            "",
-            "**Как пользоваться:**",
-            "• `/event_create название описание время` — создать",
-            "  (время: `15.09 19:00`, `завтра 18:00`, `через 2ч`)",
-            "• Участники жмут кнопки: ✅ Пойду / ❓ Может / ❌ Не пойду",
-            "• `/event_list` — список событий",
-            "• `/event_cancel ID` — отмена",
-        ]
-        embed = discord.Embed(title="🎉 События — настройки", description="\n".join(lines), color=Colors.MAIN)
-        embed.set_footer(text="Ayanami System")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-# ==========================================
 #   КАРТОЧКИ
 # ==========================================
 
@@ -3458,7 +3410,7 @@ class SetupCardsView(discord.ui.View):
         )
         rows = await cursor.fetchall()
         if not rows:
-            return await interaction.followup.send("📭 Пул пуст. Добавьте карточки через `/card_add`.", ephemeral=True)
+            return await interaction.followup.send("📭 Пул пуст. Добавьте карточки на этой панели («Добавить карточку»).", ephemeral=True)
         names = {"common": "Обычная", "rare": "Редкая", "epic": "Эпическая", "legendary": "Легендарная"}
         lines = []
         for r in rows:
@@ -3468,13 +3420,17 @@ class SetupCardsView(discord.ui.View):
         embed.set_footer(text=f"Всего: {len(rows)}")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    @discord.ui.button(label="Добавить карточку", emoji="➕", style=discord.ButtonStyle.success, row=1)
+    async def btn_add_card(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CardAddModal())
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         lines = [
             "### Карточки",
             "",
             "**Для админов:**",
-            "• `/card_add id имя [редкость] [эмодзи]` — добавить в пул",
+            "• «Добавить карточку» — добавить в пул",
             "• редкости: common/rare/epic/legendary",
             "• `drop_rate` — шанс выпадения (0.01–1.0)",
             "",
@@ -3482,10 +3438,355 @@ class SetupCardsView(discord.ui.View):
             "• `/card_drop` — выбросить карточку (кулдаун 5 мин)",
             "• `/card_inventory` — коллекция",
             "• `/card_give` — передать игроку",
+            "• `/shop buy` и `/sell_card` — купить/продать карточки",
         ]
         embed = discord.Embed(title="🃏 Карточки — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   МОДАЛКИ И ПАНЕЛИ: ТИКЕТЫ / КАРТОЧКИ / GITHUB / WEBHOOKS
+# ==========================================
+
+class TicketCategoryModal(discord.ui.Modal, title="Категория тикета"):
+    name = discord.ui.TextInput(label="Название", required=True, max_length=50)
+    emoji = discord.ui.TextInput(label="Эмодзи", required=False, max_length=10, default="📩")
+    description = discord.ui.TextInput(label="Описание", style=discord.TextStyle.paragraph, required=False, max_length=200)
+    category_id = discord.ui.TextInput(label="ID Discord-категории (0 — без)", required=False, max_length=30, default="0")
+
+    def __init__(self, action: str):
+        super().__init__()
+        self.action = action
+        if action == "remove":
+            self.title = "Удалить категорию тикета"
+            self.emoji.required = False
+            self.description.required = False
+            self.category_id.required = False
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Tickets")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль тикетов отключен.", ephemeral=True)
+        if self.action == "remove":
+            return await cog._handle_category(interaction, "remove", self.name.value)
+        try:
+            cat_id = int(self.category_id.value or 0)
+        except ValueError:
+            cat_id = 0
+        await cog._handle_category(
+            interaction, "add",
+            self.name.value,
+            self.emoji.value or "📩",
+            self.description.value or "",
+            cat_id,
+        )
+
+
+class CardAddModal(discord.ui.Modal, title="🃏 Новая карточка"):
+    card_id = discord.ui.TextInput(label="ID карточки (латиница)", required=True, max_length=30)
+    name = discord.ui.TextInput(label="Название", required=True, max_length=50)
+    rarity = discord.ui.TextInput(label="Редкость (common/rare/epic/legendary)", required=False, max_length=20, default="common")
+    emoji = discord.ui.TextInput(label="Эмодзи", required=False, max_length=10, default="🃏")
+    description = discord.ui.TextInput(label="Описание", style=discord.TextStyle.paragraph, required=False, max_length=300)
+    drop_rate = discord.ui.TextInput(label="Шанс выпадения 0.01–1.0", required=False, max_length=10, default="0.1")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Collectibles")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль карточек отключен.", ephemeral=True)
+        try:
+            drop_rate = float(self.drop_rate.value.replace(",", "."))
+        except ValueError:
+            drop_rate = 0.1
+        msg = await cog._add_card(
+            interaction,
+            self.card_id.value.strip(),
+            self.name.value.strip(),
+            self.rarity.value.strip().lower(),
+            self.emoji.value or "🃏",
+            self.description.value or "",
+            drop_rate,
+        )
+        await interaction.response.send_message(msg, ephemeral=True)
+
+
+class GitHubRepoModal(discord.ui.Modal, title="📦 Репозиторий GitHub"):
+    repo = discord.ui.TextInput(label="Репозиторий (owner/name)", required=True, max_length=100)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        repo = self.repo.value.strip()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://api.github.com/repos/{repo}",
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 404:
+                    return await interaction.followup.send("❌ Репозиторий не найден.", ephemeral=True)
+                if resp.status != 200:
+                    return await interaction.followup.send("❌ Ошибка API GitHub.", ephemeral=True)
+                data = await resp.json()
+
+        embed = discord.Embed(
+            title=f"📦 {data['full_name']}",
+            description=(data.get("description") or "Нет описания")[:500],
+            url=data["html_url"],
+            color=Colors.MAIN,
+        )
+        embed.add_field(name="⭐ Звёзды", value=str(data.get("stargazers_count", 0)), inline=True)
+        embed.add_field(name="🍴 Форки", value=str(data.get("forks_count", 0)), inline=True)
+        embed.add_field(name="🐛 Issues", value=str(data.get("open_issues_count", 0)), inline=True)
+        embed.add_field(name="🌐 Язык", value=data.get("language", "Не указан"), inline=True)
+        embed.add_field(name="📋 Лицензия", value=(data.get("license") or {}).get("name", "Не указана"), inline=True)
+        embed.set_footer(text=f"Создан: {data.get('created_at', '')[:10]}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class GitHubTrackModal(discord.ui.Modal, title="📌 Отслеживать репозиторий"):
+    repo = discord.ui.TextInput(label="Репозиторий (owner/name)", required=True, max_length=100)
+    channel_id = discord.ui.TextInput(label="ID канала для уведомлений", required=True, max_length=30)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        db = Database()
+        repo = self.repo.value.strip()
+        try:
+            channel_id = int(self.channel_id.value.strip())
+        except ValueError:
+            return await interaction.response.send_message("❌ Некорректный ID канала.", ephemeral=True)
+        channel = interaction.guild.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return await interaction.response.send_message("❌ Канал не найден (нужен ID текстового канала).", ephemeral=True)
+
+        config = await db.get_guild_config(str(interaction.guild.id))
+        tracked = config.get("github_tracked_repos", [])
+        if any(t["repo"] == repo for t in tracked):
+            return await interaction.response.send_message("❌ Этот репозиторий уже отслеживается.", ephemeral=True)
+        tracked.append({"repo": repo, "channel_id": str(channel.id)})
+        await db.update_config_field(str(interaction.guild.id), "github_tracked_repos", tracked)
+        await interaction.response.send_message(f"✅ Отслеживание **{repo}** настроено в {channel.mention}", ephemeral=True)
+
+
+class GitHubUntrackModal(discord.ui.Modal, title="🚫 Прекратить отслеживание"):
+    repo = discord.ui.TextInput(label="Репозиторий (owner/name)", required=True, max_length=100)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        db = Database()
+        repo = self.repo.value.strip()
+        config = await db.get_guild_config(str(interaction.guild.id))
+        tracked = config.get("github_tracked_repos", [])
+        before = len(tracked)
+        tracked = [t for t in tracked if t["repo"] != repo]
+        if len(tracked) == before:
+            return await interaction.response.send_message("❌ Репозиторий не найден в списке отслеживания.", ephemeral=True)
+        await db.update_config_field(str(interaction.guild.id), "github_tracked_repos", tracked)
+        await interaction.response.send_message(f"✅ Отслеживание **{repo}** прекращено.", ephemeral=True)
+
+
+class SetupGithubView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Инфо о репозитории", emoji="📦", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_repo(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GitHubRepoModal())
+
+    @discord.ui.button(label="Отслеживать", emoji="📌", style=discord.ButtonStyle.success, row=0)
+    async def btn_track(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GitHubTrackModal())
+
+    @discord.ui.button(label="Отписаться", emoji="🚫", style=discord.ButtonStyle.danger, row=0)
+    async def btn_untrack(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GitHubUntrackModal())
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        tracked = config.get("github_tracked_repos", [])
+        if tracked:
+            lines = [f"• `{t['repo']}` → <#{t['channel_id']}>" for t in tracked]
+        else:
+            lines = ["*Отслеживаемых репозиториев нет.*"]
+        embed = discord.Embed(title="🐙 GitHub — отслеживание", description="\n".join(lines), color=Colors.MAIN)
+        embed.add_field(
+            name="Публичные команды",
+            value="`/github_commits`, `/github_pr`, `/github_issues`",
+            inline=False,
+        )
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+async def _post_webhook(url: str, payload: dict) -> tuple[int, str]:
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as resp:
+            text = await resp.text()
+            return resp.status, text
+
+
+def _webhook_payload(message: str, embed_title: str, embed_description: str, embed_color: str) -> dict:
+    data = {}
+    if message:
+        data["content"] = message
+    if embed_title or embed_description:
+        color = discord.Color.blurple()
+        if embed_color:
+            try:
+                color = discord.Color(int(embed_color.strip("#"), 16))
+            except Exception:
+                pass
+        data["embeds"] = [
+            discord.Embed(title=embed_title or "", description=embed_description or "", color=color).to_dict()
+        ]
+    return data
+
+
+class SetupWebhookView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Создать и конструктор", emoji="➕", style=discord.ButtonStyle.success, row=0)
+    async def btn_create(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WebhookCreateModal())
+
+    @discord.ui.button(label="Редактор", emoji="🛠️", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_build(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WebhookBuildModal())
+
+    @discord.ui.button(label="Список вебхуков", emoji="📋", style=discord.ButtonStyle.grey, row=0)
+    async def btn_list(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WebhookListModal())
+
+    @discord.ui.button(label="Быстрая отправка", emoji="🚀", style=discord.ButtonStyle.blurple, row=1)
+    async def btn_send(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WebhookSendModal())
+
+    @discord.ui.button(label="Удалить вебхук", emoji="🗑️", style=discord.ButtonStyle.danger, row=1)
+    async def btn_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WebhookDeleteModal())
+
+    @discord.ui.button(label="Шаблоны JSON", emoji="📄", style=discord.ButtonStyle.grey, row=1)
+    async def btn_templates(self, interaction: discord.Interaction, button: discord.ui.Button):
+        templates = {
+            "embed_full": {"embeds": [{"title": "Заголовок", "description": "Описание с **markdown**", "color": 0x5865F2, "fields": [{"name": "Field", "value": "Значение", "inline": True}], "footer": {"text": "Footer"}}]},
+            "embed_simple": {"embeds": [{"title": "Простой embed", "description": "Текст описания", "color": 0x5865F2}]},
+            "buttons_link": {"components": [{"type": 1, "components": [{"type": 2, "style": 5, "label": "Google", "url": "https://google.com"}]}]},
+            "full_payload": {"content": "Текст сообщения", "embeds": [{"title": "Привет!", "description": "Полный payload", "color": 0x5865F2}], "components": [{"type": 1, "components": [{"type": 2, "style": 5, "label": "Ссылка", "url": "https://google.com"}]}]},
+        }
+        blocks = []
+        for name, data in templates.items():
+            raw = _json.dumps(data, ensure_ascii=False, indent=2)
+            blocks.append(f"**{name}:**\n```json\n{raw}\n```")
+        embed = discord.Embed(
+            title="📄 Шаблоны вебхуков",
+            description=("\n\n".join(blocks))[:4000],
+            color=Colors.MAIN,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class WebhookCreateModal(discord.ui.Modal, title="➕ Создать вебхук"):
+    channel_id = discord.ui.TextInput(label="ID канала", required=True, max_length=30)
+    name = discord.ui.TextInput(label="Имя вебхука", required=False, max_length=80, default="Ayanami Webhook")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            channel_id = int(self.channel_id.value.strip())
+        except ValueError:
+            return await interaction.followup.send("❌ Некорректный ID канала.", ephemeral=True)
+        channel = interaction.guild.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return await interaction.followup.send("❌ Канал не найден (нужен ID текстового канала).", ephemeral=True)
+        try:
+            webhook = await channel.create_webhook(name=self.name.value or "Ayanami Webhook", reason=f"Создан {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.followup.send("❌ Нет прав на создание вебхуков.", ephemeral=True)
+
+        from cogs.utils import WebhookBuilderView
+        view = WebhookBuilderView(webhook.url)
+        embed = view._make_embed()
+        embed.add_field(name="Канал", value=channel.mention, inline=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+class WebhookBuildModal(discord.ui.Modal, title="🛠️ Редактор вебхука"):
+    webhook_url = discord.ui.TextInput(label="URL вебхука", required=True, max_length=400)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from cogs.utils import WebhookBuilderView
+        view = WebhookBuilderView(self.webhook_url.value.strip())
+        embed = view._make_embed()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class WebhookListModal(discord.ui.Modal, title="📋 Вебхуки канала"):
+    channel_id = discord.ui.TextInput(label="ID канала", required=True, max_length=30)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            channel_id = int(self.channel_id.value.strip())
+        except ValueError:
+            return await interaction.followup.send("❌ Некорректный ID канала.", ephemeral=True)
+        channel = interaction.guild.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return await interaction.followup.send("❌ Канал не найден (нужен ID текстового канала).", ephemeral=True)
+        try:
+            webhooks = await channel.webhooks()
+        except discord.Forbidden:
+            return await interaction.followup.send("❌ Нет прав на просмотр вебхуков.", ephemeral=True)
+        if not webhooks:
+            return await interaction.followup.send("📋 В канале нет вебхуков.", ephemeral=True)
+        lines = [f"**{wh.name}** (`{wh.id}`) — создал {wh.user.mention if wh.user else '—'}" for wh in webhooks]
+        embed = discord.Embed(title=f"Вебхуки #{channel.name}", description="\n".join(lines), color=Colors.MAIN)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class WebhookSendModal(discord.ui.Modal, title="🚀 Быстрая отправка"):
+    webhook_url = discord.ui.TextInput(label="URL вебхука", required=True, max_length=400)
+    message = discord.ui.TextInput(label="Текст сообщения", style=discord.TextStyle.paragraph, required=False, max_length=1900)
+    embed_title = discord.ui.TextInput(label="Заголовок embed", required=False, max_length=200)
+    embed_description = discord.ui.TextInput(label="Описание embed", style=discord.TextStyle.paragraph, required=False, max_length=2000)
+    embed_color = discord.ui.TextInput(label="Цвет embed (hex, напр. ff0000)", required=False, max_length=10)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        payload = _webhook_payload(
+            self.message.value or "",
+            self.embed_title.value or "",
+            self.embed_description.value or "",
+            self.embed_color.value or "",
+        )
+        if not payload.get("content") and not payload.get("embeds"):
+            return await interaction.followup.send("❌ Укажите текст или embed.", ephemeral=True)
+        status, text = await _post_webhook(self.webhook_url.value.strip(), payload)
+        if status in (200, 204):
+            await interaction.followup.send("✅ Отправлено!", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Ошибка {status}: `{text[:300]}`", ephemeral=True)
+
+
+class WebhookDeleteModal(discord.ui.Modal, title="🗑️ Удалить вебхук"):
+    webhook_url = discord.ui.TextInput(label="URL вебхука", required=True, max_length=400)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(self.webhook_url.value.strip()) as resp:
+                if resp.status in (200, 204):
+                    await interaction.followup.send("✅ Вебхук удалён.", ephemeral=True)
+                else:
+                    text = await resp.text()
+                    await interaction.followup.send(f"❌ Ошибка {resp.status}: `{text[:200]}`", ephemeral=True)
 
 
 # ==========================================

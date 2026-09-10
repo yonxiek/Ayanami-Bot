@@ -24,37 +24,19 @@ class Collectibles(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    @app_commands.command(name="card_add", description="Добавить карточку в пул (админ)")
-    @app_commands.describe(
-        card_id="Уникальный ID карточки",
-        name="Название",
-        rarity="Редкость",
-        emoji="Эмодзи",
-        description="Описание",
-        drop_rate="Шанс выпадения (0.01-1.0)"
-    )
-    @app_commands.choices(rarity=[
-        app_commands.Choice(name="Обычная", value="common"),
-        app_commands.Choice(name="Редкая", value="rare"),
-        app_commands.Choice(name="Эпическая", value="epic"),
-        app_commands.Choice(name="Легендарная", value="legendary"),
-    ])
-    @app_commands.default_permissions(administrator=True)
-    async def card_add(self, interaction: discord.Interaction, card_id: str, name: str,
-                       rarity: app_commands.Choice[str], emoji: str = "🃏",
-                       description: str = "", drop_rate: float = 0.1):
+    async def _add_card(self, interaction: discord.Interaction, card_id: str, name: str,
+                        rarity: str, emoji: str = "🃏",
+                        description: str = "", drop_rate: float = 0.1):
         drop_rate = max(0.01, min(1.0, drop_rate))
+        rarity = rarity if rarity in RARITY_CONFIG else "common"
         await self.db.conn.execute(
             "INSERT OR REPLACE INTO collectible_cards (guild_id, card_id, name, description, rarity, emoji, drop_rate, enabled) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
-            (str(interaction.guild.id), card_id, name, description, rarity.value, emoji, drop_rate)
+            (str(interaction.guild.id), card_id, name, description, rarity, emoji, drop_rate)
         )
         await self.db.conn.commit()
-        r_info = RARITY_CONFIG[rarity.value]
-        await interaction.response.send_message(
-            f"{r_info['emoji']} Карточка **{name}** [{r_info['label']}] добавлена! (шанс: {drop_rate:.0%})",
-            ephemeral=True
-        )
+        r_info = RARITY_CONFIG[rarity]
+        return f"{r_info['emoji']} Карточка **{name}** [{r_info['label']}] добавлена! (шанс: {drop_rate:.0%})"
 
     @app_commands.command(name="card_drop", description="Выбросить случайную карточку")
     @app_commands.checks.cooldown(1, 300, key=lambda i: (i.guild_id, i.user.id))
@@ -68,7 +50,7 @@ class Collectibles(commands.Cog):
         )
         cards = await cursor.fetchall()
         if not cards:
-            return await interaction.followup.send("📭 Карточек в пуле нет. Админы, добавьте через `/card_add`.", ephemeral=True)
+            return await interaction.followup.send("📭 Карточек в пуле нет. Админы, добавьте их на панели «Карточки» в `/setup`.", ephemeral=True)
 
         # Взвешенный рандом
         total_rate = sum(c["drop_rate"] for c in cards)

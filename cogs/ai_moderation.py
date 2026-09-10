@@ -1,13 +1,8 @@
-import aiohttp
 import discord
 import json
 from datetime import datetime, timezone
 from discord.ext import commands
-from discord import app_commands
 from db import Database
-from prefix_adapter import InteractionAdapter
-from ui_components import Colors
-import config
 import ai_client
 
 MODERATION_PROMPT = (
@@ -135,62 +130,6 @@ class AIModeration(commands.Cog):
              datetime.now(timezone.utc).isoformat())
         )
         await self.db.conn.commit()
-
-    @app_commands.command(name="ai_mod_set", description="Включить/выключить AI-модерацию")
-    @app_commands.describe(enabled="Включить или выключить")
-    @app_commands.choices(enabled=[
-        app_commands.Choice(name="Включить", value="on"),
-        app_commands.Choice(name="Выключить", value="off"),
-    ])
-    @app_commands.default_permissions(administrator=True)
-    async def ai_mod_set(self, interaction: discord.Interaction, enabled: app_commands.Choice[str]):
-        val = enabled.value == "on"
-        await self.db.update_config_field(str(interaction.guild.id), "ai_moderation_enabled", val)
-        status = "включена" if val else "выключена"
-        await interaction.response.send_message(f"✅ AI-модерация {status}.", ephemeral=True)
-
-    @app_commands.command(name="ai_mod_log", description="Последние действия AI-модерации")
-    @app_commands.describe(count="Количество записей (макс. 25)")
-    @app_commands.default_permissions(moderate_members=True)
-    async def ai_mod_log(self, interaction: discord.Interaction, count: int = 10):
-        count = min(count, 25)
-        cursor = await self.db.conn.execute(
-            "SELECT user_id, action, reason, confidence, created_at FROM ai_moderation_log "
-            "WHERE guild_id = ? ORDER BY created_at DESC LIMIT ?",
-            (str(interaction.guild.id), count)
-        )
-        rows = await cursor.fetchall()
-        if not rows:
-            return await interaction.response.send_message("📭 Записей нет.", ephemeral=True)
-
-        action_emojis = {"delete": "🗑️", "warn": "⚠️", "mute": "🔇", "none": "✅"}
-        lines = []
-        for r in rows:
-            emoji = action_emojis.get(r["action"], "❓")
-            lines.append(f"{emoji} <@{r['user_id']}> — {r['action']} ({r['confidence']:.0%}) — {r['reason'][:50]}")
-
-        embed = discord.Embed(
-            title="🤖 Журнал AI-модерации",
-            description="\n".join(lines),
-            color=Colors.MAIN,
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="ai_mod_set")
-    @commands.has_permissions(administrator=True)
-    async def ai_mod_set_prefix(self, ctx, enabled: str):
-        from prefix_adapter import InteractionAdapter, make_choice
-        await self.ai_mod_set.callback(self, InteractionAdapter(ctx), make_choice("on" if enabled.lower() in ("on", "вкл", "1", "да") else "off"))
-
-    @commands.command(name="ai_mod_log")
-    @commands.has_permissions(moderate_members=True)
-    async def ai_mod_log_prefix(self, ctx, count: int = 10):
-        from prefix_adapter import InteractionAdapter
-        await self.ai_mod_log.callback(self, InteractionAdapter(ctx), count)
 
 
 async def setup(bot):

@@ -1,10 +1,7 @@
 import discord
-import json
 from datetime import datetime, timezone
 from discord.ext import commands
-from discord import app_commands
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 from cogs.achievements import award_achievement
 
@@ -62,19 +59,41 @@ class Tickets(commands.Cog):
         self.db = Database()
 
     # ==========================================================
-    #                    КОМАНДЫ
+    #                    ЛОГИКА РАССЫЛКИ ПАНЕЛИ
     # ==========================================================
 
-    @app_commands.command(name="ticket_panel", description="Отправить панель создания тикетов")
-    @app_commands.describe(channel="Канал для панели")
-    @app_commands.default_permissions(administrator=True)
-    async def ticket_panel(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+    async def _handle_category(self, interaction: discord.Interaction, action: str, name: str = None,
+                              emoji: str = "📩", description: str = "", category_id: int = None):
+        config = await self.db.get_guild_config(str(interaction.guild.id))
+        categories = config.get("ticket_categories", [])
+
+        if action == "remove":
+            if not name:
+                return await interaction.response.send_message("❌ Укажите название для удаления.", ephemeral=True)
+            before = len(categories)
+            categories = [c for c in categories if c["name"].lower() != name.lower()]
+            if len(categories) == before:
+                return await interaction.response.send_message("❌ Категория не найдена.", ephemeral=True)
+            await self.db.update_config_field(str(interaction.guild.id), "ticket_categories", categories)
+            return await interaction.response.send_message(f"✅ Категория **{name}** удалена.", ephemeral=True)
+
+        if not name:
+            return await interaction.response.send_message("❌ Укажите название.", ephemeral=True)
+        cat = {"name": name, "emoji": emoji, "description": description, "category_id": category_id or 0}
+        categories.append(cat)
+        await self.db.update_config_field(str(interaction.guild.id), "ticket_categories", categories)
+        await interaction.response.send_message(
+            f"✅ Категория **{name}** добавлена. ID Discord-категории: {category_id or 0}.",
+            ephemeral=True
+        )
+
+    async def _send_panel(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
         target = channel or interaction.channel
         config = await self.db.get_guild_config(str(interaction.guild.id))
         categories = config.get("ticket_categories", [])
         if not categories:
-            return await interaction.response.send_message(
-                "❌ Сначала настройте категории через `/ticket_category add`.", ephemeral=True
+            return await interaction.followup.send(
+                "❌ Сначала добавьте категории на панели «Тикеты» в `/setup`.", ephemeral=True
             )
 
         embed = discord.Embed(
@@ -86,67 +105,10 @@ class Tickets(commands.Cog):
 
         view = TicketPanelView(categories)
         await target.send(embed=embed, view=view)
-        await interaction.response.send_message(f"✅ Панель отправлена в {target.mention}", ephemeral=True)
-
-    @app_commands.command(name="ticket_category", description="Управление категориями тикетов")
-    @app_commands.describe(
-        action="Добавить или удалить",
-        name="Название категории",
-        emoji="Эмодзи",
-        description="Описание",
-        category_id="ID категории Discord (для удаления)"
-    )
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Добавить", value="add"),
-        app_commands.Choice(name="Удалить", value="remove"),
-        app_commands.Choice(name="Список", value="list"),
-    ])
-    @app_commands.default_permissions(administrator=True)
-    async def ticket_category(self, interaction: discord.Interaction, action: app_commands.Choice[str],
-                              name: str = None, emoji: str = "📩", description: str = "",
-                              category_id: int = None):
-        config = await self.db.get_guild_config(str(interaction.guild.id))
-        categories = config.get("ticket_categories", [])
-
-        if action.value == "list":
-            if not categories:
-                return await interaction.response.send_message("📭 Категорий нет.", ephemeral=True)
-            lines = []
-            for i, cat in enumerate(categories, 1):
-                lines.append(f"**{i}.** {cat.get('emoji', '📩')} {cat['name']} — {cat.get('description', '')}")
-            embed = discord.Embed(title="📋 Категории тикетов", description="\n".join(lines), color=Colors.MAIN)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        if action.value == "add":
-            if not name:
-                return await interaction.response.send_message("❌ Укажите название.", ephemeral=True)
-            cat = {"name": name, "emoji": emoji, "description": description, "category_id": category_id or 0}
-            categories.append(cat)
-            await self.db.update_config_field(str(interaction.guild.id), "ticket_categories", categories)
-            return await interaction.response.send_message(
-                f"✅ Категория **{name}** добавлена. Назначьте `category_id` (ID Discord-категории) через редактирование конфига или повторное добавление.",
-                ephemeral=True
-            )
-
-        if action.value == "remove":
-            if not name:
-                return await interaction.response.send_message("❌ Укажите название для удаления.", ephemeral=True)
-            before = len(categories)
-            categories = [c for c in categories if c["name"].lower() != name.lower()]
-            if len(categories) == before:
-                return await interaction.response.send_message("❌ Категория не найдена.", ephemeral=True)
-            await self.db.update_config_field(str(interaction.guild.id), "ticket_categories", categories)
-            return await interaction.response.send_message(f"✅ Категория **{name}** удалена.", ephemeral=True)
-
-    @app_commands.command(name="ticket_setlog", description="Установить канал логов тикетов")
-    @app_commands.describe(channel="Канал для логов")
-    @app_commands.default_permissions(administrator=True)
-    async def ticket_setlog(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await self.db.update_config_field(str(interaction.guild.id), "ticket_log_channel_id", str(channel.id))
-        await interaction.response.send_message(f"✅ Логи тикетов будут в {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ Панель отправлена в {target.mention}", ephemeral=True)
 
     # ==========================================================
-    #                    ЛОГИКА ТИКЕТОВ
+    #                ЛОГИКА ТИКЕТОВ
     # ==========================================================
 
     async def _create_ticket(self, interaction: discord.Interaction, category_id: int):
@@ -318,26 +280,6 @@ class Tickets(commands.Cog):
             await log_channel.send(embed=embed)
         except Exception:
             pass
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="ticket_panel")
-    @commands.has_permissions(administrator=True)
-    async def ticket_panel_prefix(self, ctx, channel: discord.TextChannel = None):
-        await self.ticket_panel.callback(self, InteractionAdapter(ctx), channel)
-
-    @commands.command(name="ticket_category")
-    @commands.has_permissions(administrator=True)
-    async def ticket_category_prefix(self, ctx, action: str, name: str = None, emoji: str = "📩", description: str = ""):
-        from prefix_adapter import make_choice
-        await self.ticket_category.callback(self, InteractionAdapter(ctx), make_choice(action), name, emoji, description)
-
-    @commands.command(name="ticket_setlog")
-    @commands.has_permissions(administrator=True)
-    async def ticket_setlog_prefix(self, ctx, channel: discord.TextChannel):
-        await self.ticket_setlog.callback(self, InteractionAdapter(ctx), channel)
 
 
 async def setup(bot):
