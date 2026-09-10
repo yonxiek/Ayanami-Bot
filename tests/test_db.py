@@ -123,6 +123,15 @@ async def test_get_user_achievements(db):
     assert await db.count_achievements("111", "222") == 2
 
 
+async def test_update_activity_counts(db):
+    await db.update_activity("111", "222", "voice_join")
+    await db.update_activity("111", "222", "voice_join")
+    await db.update_activity("111", "222", "reactions")
+    activities = await db.get_user_activities("111", "222")
+    assert activities["voice_join"] == 2
+    assert activities["reactions"] == 1
+
+
 async def test_award_achievement_once(db):
     first = await db.award_achievement("111", "222", "first_ticket")
     second = await db.award_achievement("111", "222", "first_ticket")

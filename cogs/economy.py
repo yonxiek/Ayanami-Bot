@@ -71,6 +71,7 @@ class Economy(commands.Cog):
         session_key = f"{member.guild.id}_{member.id}"
         if before.channel is None and after.channel is not None:
             self.voice_sessions[session_key] = discord.utils.utcnow()
+            await self.db.update_activity(str(member.guild.id), str(member.id), "voice_join")
         elif before.channel is not None and after.channel is None:
             start_time = self.voice_sessions.pop(session_key, None)
             if start_time:
@@ -96,6 +97,15 @@ class Economy(commands.Cog):
     def format_time(self, minutes: int) -> str:
         if minutes < 60: return f"{minutes} мин."
         return f"{minutes // 60} ч. {minutes % 60} мин."
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if not payload.guild_id:
+            return
+        member = payload.member
+        if not member or member.bot:
+            return
+        await self.db.update_activity(str(payload.guild_id), str(member.id), "reactions")
 
     @app_commands.command(name="profile", description="Профиль")
     async def profile(self, interaction: discord.Interaction, member: discord.Member = None):
