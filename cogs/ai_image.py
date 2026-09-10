@@ -26,6 +26,35 @@ def _detect_image_ext(data: bytes) -> str:
     return ".png"
 
 
+class PublicImageButton(discord.ui.View):
+    def __init__(self, img_bytes: bytes, prompt: str, style: str, model: str):
+        super().__init__(timeout=300)
+        self.img_bytes = img_bytes
+        self.prompt = prompt
+        self.style = style
+        self.model = model
+        self.posted = False
+
+    @discord.ui.button(label="Показать в чате", emoji="📢", style=discord.ButtonStyle.grey)
+    async def btn_public(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.posted:
+            return
+        ext = _detect_image_ext(self.img_bytes)
+        file = discord.File(self.img_bytes, filename=f"generated{ext}")
+        embed = discord.Embed(
+            title=f"🎨 {self.prompt[:100]}",
+            description=f"*{self.style}* — автор: {interaction.user.display_name}",
+            color=Colors.MAIN,
+        )
+        embed.set_image(url=f"attachment://generated{ext}")
+        embed.set_footer(text=f"Модель: {self.model} • Стиль: {self.style}")
+        await interaction.response.send_message(embed=embed, file=file)
+        self.posted = True
+        button.disabled = True
+        button.label = "Отправлено ✅"
+        await interaction.message.edit(view=self)
+
+
 class AIImageModal(discord.ui.Modal, title="🎨 Генерация изображения"):
     prompt = discord.ui.TextInput(
         label="Описание изображения",
@@ -221,7 +250,8 @@ class AIImageGeneration(commands.Cog):
                 )
                 embed.set_image(url=f"attachment://generated{ext}")
                 embed.set_footer(text=f"Модель: {model} • Стиль: {style}")
-                return await interaction.followup.send(embed=embed, file=file)
+                view = PublicImageButton(img_bytes, prompt, style, model)
+                return await interaction.followup.send(embed=embed, file=file, view=view)
 
             except Exception as e:
                 last_error = str(e)

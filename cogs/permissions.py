@@ -112,7 +112,6 @@ class Permissions(commands.Cog):
         self.COG_RU = {
             "Moderation": "🛡️ Модерация",
             "Economy": "💰 Рейды и Экономика",
-            "Raids": "⚔️ Система Рейдов",
             "Utils": "🛠️ Утилиты",
             "Dashboard": "⚙️ Настройки",
             "Permissions": "🔒 Права"
