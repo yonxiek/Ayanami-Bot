@@ -4,6 +4,7 @@ from discord import app_commands
 from ui_components import AyanamiUI, Icons, Colors
 from db import Database
 import config
+from datetime import datetime
 
 
 async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
@@ -90,6 +91,12 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Магазин", value="shop", emoji="🛒", description="Товары, цены и стоки магазина"),
             discord.SelectOption(label="Титулы", value="titles", emoji="🏷️", description="Выдача и управление титулами участников"),
             discord.SelectOption(label="Модерация", value="moderation", emoji="⚖️", description="Лимит варнов, автодействия, канал логов модерации"),
+            discord.SelectOption(label="Тикеты", value="tickets", emoji="📩", description="Категории, роль поддержки, канал логов"),
+            discord.SelectOption(label="ИИ-модерация", value="ai_mod", emoji="🛡️", description="Авто-проверка сообщений через Gemini"),
+            discord.SelectOption(label="Кланы", value="clans", emoji="⚔️", description="Настройка кланов сервера"),
+            discord.SelectOption(label="Голосования", value="polls", emoji="🗳️", description="Тип голосований по умолчанию"),
+            discord.SelectOption(label="События", value="events", emoji="🎉", description="Настройки событий и RSVP"),
+            discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
         ]
         select = discord.ui.Select(placeholder="Выберите модуль для настройки...", options=options)
         select.callback = self.menu_callback
@@ -121,6 +128,12 @@ class DashboardView(discord.ui.LayoutView):
             "shop": lambda: SetupShopView(self.cog, db, self.guild_id),
             "titles": lambda: SetupTitlesView(self.cog, db, self.guild_id),
             "moderation": lambda: SetupModerationView(self.cog, db, self.guild_id),
+            "tickets": lambda: SetupTicketsView(self.cog, db, self.guild_id),
+            "ai_mod": lambda: SetupAIModView(self.cog, db, self.guild_id),
+            "clans": lambda: SetupClansView(self.cog, db, self.guild_id),
+            "polls": lambda: SetupPollsView(self.cog, db, self.guild_id),
+            "events": lambda: SetupEventsView(self.cog, db, self.guild_id),
+            "cards": lambda: SetupCardsView(self.cog, db, self.guild_id),
         }
 
         if val == "perms":
@@ -3112,6 +3125,336 @@ class SetupAutomodView(discord.ui.View):
         embed = discord.Embed(title="📊 Статистика авто-модерации", description=desc, color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   ТИКЕТЫ
+# ==========================================
+
+class SetupTicketsView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="📋 Канал логов тикетов",
+        min_values=0, max_values=1, row=0
+    )
+    async def select_log_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        await interaction.response.defer(ephemeral=True)
+        value = select.values[0].id if select.values else None
+        await self.db.update_config_field(str(self.guild_id), "ticket_log_channel_id", value)
+        await log_settings_change(
+            interaction, "Тикеты",
+            f"**Действие:** изменён канал логов тикетов\n**Канал:** {f'<#{value}>' if value else 'нет'}"
+        )
+        text = f"✅ Логи тикетов: <#{value}>" if value else "✅ Логи тикетов отключены."
+        await interaction.followup.send(text, ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="🛠️ Роль поддержки (доступ к тикетам)",
+        min_values=0, max_values=1, row=1
+    )
+    async def select_support_role(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        await interaction.response.defer(ephemeral=True)
+        value = select.values[0].id if select.values else None
+        await self.db.update_config_field(str(self.guild_id), "ticket_support_role_id", value)
+        await log_settings_change(
+            interaction, "Тикеты",
+            f"**Действие:** изменена роль поддержки\n**Роль:** {f'<@&{value}>' if value else 'нет'}"
+        )
+        text = f"✅ Роль поддержки: <@&{value}>" if value else "✅ Роль поддержки убрана (стаф видит тикеты по админ/стаф ролям)."
+        await interaction.followup.send(text, ephemeral=True)
+
+    @discord.ui.button(label="Категории", emoji="📁", style=discord.ButtonStyle.blurple, row=2)
+    async def btn_categories(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        categories = config.get("ticket_categories", [])
+        if not categories:
+            desc = "*Категорий нет. Создайте командой `/ticket_category add`, указав название и ID Discord-категории.*"
+        else:
+            desc = ""
+            for i, cat in enumerate(categories, 1):
+                desc += f"> **{i}.** {cat.get('emoji', '📩')} {cat['name']} — {cat.get('description', '')} (ID: {cat.get('category_id', 0)})\n"
+        embed = discord.Embed(title="📁 Категории тикетов", description=desc, color=Colors.MAIN)
+        embed.set_footer(text="Панель создаётся командой /ticket_panel")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        log_ch = config.get("ticket_log_channel_id")
+        support_role = config.get("ticket_support_role_id")
+        categories = config.get("ticket_categories", [])
+        lines = [
+            "### Тикеты",
+            f"**Канал логов:** {f'<#{log_ch}>' if log_ch else '❌ Не настроен'}",
+            f"**Роль поддержки:** {f'<@&{support_role}>' if support_role else '❌ Не настроена'}",
+            f"**Категорий:** {len(categories)}",
+            "",
+            "**Как настроить:**",
+            "1. `/ticket_category add` — добавить категории",
+            "2. `/ticket_setlog` — канал логов",
+            "3. `/ticket_panel` — отправить панель в канал",
+        ]
+        embed = discord.Embed(title="📩 Тикеты — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   ИИ-МОДЕРАЦИЯ
+# ==========================================
+
+class SetupAIModView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Включить", emoji="🟢", style=discord.ButtonStyle.success, row=0)
+    async def btn_on(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._set(interaction, True)
+
+    @discord.ui.button(label="Выключить", emoji="🔴", style=discord.ButtonStyle.danger, row=0)
+    async def btn_off(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._set(interaction, False)
+
+    async def _set(self, interaction: discord.Interaction, value: bool):
+        await interaction.response.defer(ephemeral=True)
+        await self.db.update_config_field(str(self.guild_id), "ai_moderation_enabled", value)
+        await log_settings_change(
+            interaction, "ИИ-модерация",
+            f"**Действие:** ИИ-модерация {'включена' if value else 'выключена'}"
+        )
+        await interaction.followup.send(f"✅ ИИ-модерация {'включена' if value else 'выключена'}.", ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from config import GEMINI_API_KEY
+        config = await self.db.get_guild_config(str(self.guild_id))
+        enabled = config.get("ai_moderation_enabled", False)
+        lines = [
+            "### ИИ-модерация",
+            f"**Статус:** {'🟢 Включена' if enabled else '🔴 Выключена'}",
+            f"**API-ключ:** {'✅ задан' if GEMINI_API_KEY else '❌ НЕ задан (см. `.env` → GEMINI_API_KEY)'}",
+            "",
+            "Проверяет каждое сообщение через Gemini:",
+            "• **delete** — оскорбления, NSWF, реклама",
+            "• **warn** — легкая токсичность (варн)",
+            "• **mute** — серьёзные нарушения (тайм-аут 10 мин)",
+            "",
+            "Модераторы и админы не проверяются.",
+            "Журнал: `/ai_mod_log`",
+        ]
+        embed = discord.Embed(title="🛡️ ИИ-модерация — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   КЛАНЫ
+# ==========================================
+
+class SetupClansView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Топ кланов", emoji="🏆", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_top(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        cursor = await self.db.conn.execute(
+            "SELECT name, tag, level, balance, "
+            "(SELECT COUNT(*) FROM clan_members WHERE clan_id = c.id) as members "
+            "FROM clans c WHERE guild_id = ? ORDER BY level DESC, balance DESC LIMIT 10",
+            (str(self.guild_id),)
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.followup.send("📭 Кланов пока нет.", ephemeral=True)
+        medals = ["🥇", "🥈", "🥉"]
+        lines = []
+        for i, r in enumerate(rows):
+            m = medals[i] if i < 3 else f"**{i+1}.**"
+            lines.append(f"{m} **{r['name']}** [{r['tag']}] — Ур.{r['level']} | {r['balance']}💰 | {r['members']} уч.")
+        embed = discord.Embed(title="⚔️ Кланы сервера", description="\n".join(lines), color=Colors.MAIN)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cursor = await self.db.conn.execute(
+            "SELECT COUNT(*) FROM clans WHERE guild_id = ?", (str(self.guild_id),)
+        )
+        row = await cursor.fetchone()
+        clan_count = row[0] if row else 0
+        cursor = await self.db.conn.execute(
+            "SELECT COUNT(*) FROM clan_members WHERE guild_id = ?", (str(self.guild_id),)
+        )
+        row = await cursor.fetchone()
+        member_count = row[0] if row else 0
+        lines = [
+            "### Кланы",
+            f"**Кланов на сервере:** {clan_count}",
+            f"**Участников в кланах:** {member_count}",
+            "",
+            "**Для пользователей:**",
+            "• `/clan_create` — создать клан (500 монет)",
+            "• `/clan_join`, `/clan_leave`, `/clan_info`",
+            "• `/clan_pay` — пополнить казну",
+            "• `/clan_top` — топ кланов",
+        ]
+        embed = discord.Embed(title="⚔️ Кланы — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   ГОЛОСОВАНИЯ
+# ==========================================
+
+class SetupPollsView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=0)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cursor = await self.db.conn.execute(
+            "SELECT COUNT(*) FROM polls WHERE guild_id = ?", (str(self.guild_id),)
+        )
+        row = await cursor.fetchone()
+        polls_count = row[0] if row else 0
+        cursor = await self.db.conn.execute(
+            "SELECT COUNT(*) FROM polls WHERE guild_id = ? AND status = 'active'", (str(self.guild_id),)
+        )
+        row = await cursor.fetchone()
+        active = row[0] if row else 0
+        lines = [
+            "### Голосования",
+            f"**Всего создано:** {polls_count}",
+            f"**Активных:** {active}",
+            "",
+            "**Как пользоваться:**",
+            "• `/poll question | опция1; опция2; опция3` — создать (до 10 вариантов)",
+            "• параметры `multi_select` и `anonymous`",
+            "• `/poll_results` — промежуточные итоги",
+            "• `/poll_end` — завершить и показать результат",
+        ]
+        embed = discord.Embed(title="🗳️ Голосования — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   СОБЫТИЯ
+# ==========================================
+
+class SetupEventsView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Активные события", emoji="🎉", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_active(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        cursor = await self.db.conn.execute(
+            "SELECT id, name, starts_at, creator_id FROM server_events "
+            "WHERE guild_id = ? AND status = 'active' ORDER BY starts_at", (str(self.guild_id),)
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.followup.send("📭 Активных событий нет.", ephemeral=True)
+        lines = []
+        for r in rows:
+            t = f"<t:{int(datetime.fromisoformat(r['starts_at']).timestamp())}:R>" if r["starts_at"] else "без даты"
+            lines.append(f"**#{r['id']}** {r['name']} — {t} (орг: <@{r['creator_id']}>)")
+        embed = discord.Embed(title="🎉 Активные события", description="\n".join(lines), color=Colors.MAIN)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        lines = [
+            "### События",
+            "",
+            "**Как пользоваться:**",
+            "• `/event_create название описание время` — создать",
+            "  (время: `15.09 19:00`, `завтра 18:00`, `через 2ч`)",
+            "• Участники жмут кнопки: ✅ Пойду / ❓ Может / ❌ Не пойду",
+            "• `/event_list` — список событий",
+            "• `/event_cancel ID` — отмена",
+        ]
+        embed = discord.Embed(title="🎉 События — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   КАРТОЧКИ
+# ==========================================
+
+class SetupCardsView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Пул карточек", emoji="🃏", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_pool(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        cursor = await self.db.conn.execute(
+            "SELECT card_id, name, rarity, emoji, drop_rate FROM collectible_cards "
+            "WHERE guild_id = ? AND enabled = 1 ORDER BY drop_rate DESC", (str(self.guild_id),)
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.followup.send("📭 Пул пуст. Добавьте карточки через `/card_add`.", ephemeral=True)
+        names = {"common": "Обычная", "rare": "Редкая", "epic": "Эпическая", "legendary": "Легендарная"}
+        lines = []
+        for r in rows:
+            rar = names.get(r["rarity"], r["rarity"])
+            lines.append(f"{r['emoji']} **{r['name']}** — {rar} ({r['drop_rate']:.0%})")
+        embed = discord.Embed(title="🃏 Пул карточек", description="\n".join(lines[:25]), color=Colors.MAIN)
+        embed.set_footer(text=f"Всего: {len(rows)}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        lines = [
+            "### Карточки",
+            "",
+            "**Для админов:**",
+            "• `/card_add id имя [редкость] [эмодзи]` — добавить в пул",
+            "• редкости: common/rare/epic/legendary",
+            "• `drop_rate` — шанс выпадения (0.01–1.0)",
+            "",
+            "**Для игроков:**",
+            "• `/card_drop` — выбросить карточку (кулдаун 5 мин)",
+            "• `/card_inventory` — коллекция",
+            "• `/card_give` — передать игроку",
+        ]
+        embed = discord.Embed(title="🃏 Карточки — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # ==========================================

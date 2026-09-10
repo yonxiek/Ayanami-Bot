@@ -44,7 +44,10 @@ class Reminders(commands.Cog):
         self.db = Database()
 
     async def cog_load(self):
-        self.bg_task = self.bot.loop.create_task(self._reminder_loop())
+        try:
+            self.bg_task = self.bot.loop.create_task(self._reminder_loop())
+        except (RuntimeError, AttributeError):
+            pass
 
     async def cog_unload(self):
         if hasattr(self, "bg_task"):
