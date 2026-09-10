@@ -74,7 +74,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Рейды", value="raids", emoji="⚔️", description="Роли и каналы для организации рейдов"),
             discord.SelectOption(label="Логирование", value="logging", emoji="📋", description="Канал логов и отслеживаемые события"),
             discord.SelectOption(label="Приветствия", value="greetings", emoji="👋", description="Привет, прощание, буст и автороли"),
-            discord.SelectOption(label="Реакции", value="reactions", emoji="🎭", description="Авто-реакции на определённые слова"),
+            discord.SelectOption(label="Ответы бота", value="reactions", emoji="💬", description="Авто-ответы на определённые слова"),
             discord.SelectOption(label="Reaction Roles", value="reaction_roles", emoji="🎯", description="Роли по реакциям на сообщениях"),
             discord.SelectOption(label="Приватные голосовые", value="voice", emoji="🔊", description="Триггер-канал и типы приватных комнат"),
             discord.SelectOption(label="Каналы и Роли", value="channels", emoji="📢", description="Жалобы, логи повышений и персонал"),
@@ -105,7 +105,7 @@ class DashboardView(discord.ui.LayoutView):
             "raids": lambda: SetupRaidView(self.cog, db, self.guild_id),
             "logging": lambda: SetupLoggingView(self.cog, db, self.guild_id),
             "greetings": lambda: SetupGreetingsView(self.cog, db, self.guild_id),
-            "reactions": lambda: SetupReactionsView(self.cog, db, self.guild_id),
+            "reactions": lambda: SetupResponsesView(self.cog, db, self.guild_id),
             "reaction_roles": lambda: SetupReactionRolesView(self.cog, db, self.guild_id),
             "voice": lambda: SetupVoiceRoomsView(self.cog, db, self.guild_id),
             "roles": lambda: SetupRolesView(self.cog, db, self.guild_id),
@@ -1100,87 +1100,63 @@ class GreetingBannerModal(discord.ui.Modal):
 
 
 # ==========================================
-#   РЕАКЦИИ
+#   ОТВЕТЫ БОТА
 # ==========================================
 
-class ReactionAddModal(discord.ui.Modal):
+class ResponseAddModal(discord.ui.Modal):
     def __init__(self, db: Database, guild_id: int):
-        super().__init__(title="Добавить реакцию")
+        super().__init__(title="Добавить ответ")
         self.db = db
         self.guild_id = guild_id
 
         self.trigger_input = discord.ui.TextInput(
             label="Слово-триггер",
-            placeholder="Например: спс, привет, лол",
+            placeholder="Например: привет, ура, покакать",
             required=True,
             max_length=50
         )
-        self.emoji_input = discord.ui.TextInput(
-            label="Эмодзи (через запятую или пробел)",
-            placeholder="Например: ❤️ 🔥 👍 или <:name:123>",
+        self.response_input = discord.ui.TextInput(
+            label="Ответ бота (варианты через |)",
+            style=discord.TextStyle.paragraph,
+            placeholder="Например: Приветик! 👋 | Здарова! 👋",
             required=True,
-            max_length=200
+            max_length=1000
         )
         self.add_item(self.trigger_input)
-        self.add_item(self.emoji_input)
+        self.add_item(self.response_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
         trigger = self.trigger_input.value.lower().strip()
+        if not trigger:
+            return await interaction.followup.send("❌ Укажите слово-триггер!", ephemeral=True)
 
-        raw_input = self.emoji_input.value.strip()
-        raw_emojis = [e.strip() for e in raw_input.replace(";", ",").replace(" ", ",").split(",") if e.strip()]
-
-        if not raw_emojis:
-            return await interaction.followup.send("❌ Укажите хотя бы один эмодзи!", ephemeral=True)
-
-        valid_emojis = []
-        invalid_emojis = []
-        for emoji_str in raw_emojis:
-            is_custom = emoji_str.startswith("<:") or emoji_str.startswith("<a:")
-            if is_custom:
-                partial = discord.PartialEmoji.from_str(emoji_str)
-                if partial.id:
-                    valid_emojis.append(emoji_str)
-                else:
-                    invalid_emojis.append(emoji_str)
-            elif emoji_str.startswith(":") and emoji_str.endswith(":"):
-                invalid_emojis.append(emoji_str)
-            else:
-                valid_emojis.append(emoji_str)
-
-        if invalid_emojis:
-            return await interaction.followup.send(
-                f"❌ Не удалось распознать эмодзи: {', '.join(invalid_emojis)}\n\n"
-                "Используйте:\n"
-                "• Юникод-эмодзи: ❤️🔥👍⑥⑦\n"
-                "• Кастомные: перетащите эмодзи из сервера (получите `<:name:id>`)\n\n"
-                "⚠️ `:six:` — это не эмодзи! Используйте настоящие эмодзи.",
-                ephemeral=True
-            )
+        variants = [v.strip() for v in self.response_input.value.split("|") if v.strip()]
+        if not variants:
+            return await interaction.followup.send("❌ Ответ не может быть пустым!", ephemeral=True)
+        if len(variants) > 10:
+            return await interaction.followup.send("❌ Максимум 10 вариантов ответа!", ephemeral=True)
 
         config = await self.db.get_guild_config(str(self.guild_id))
-        reactions = config.get("reactions", {})
-        existing = reactions.get(trigger, [])
-        if isinstance(existing, str):
-            existing = [existing]
-
-        merged = list(dict.fromkeys(existing + valid_emojis))
-        reactions[trigger] = merged
-        await self.db.update_config_field(str(self.guild_id), "reactions", reactions)
-        emojis_text = " ".join(merged)
-        await interaction.followup.send(f"✅ На **{trigger}** реагирует: {emojis_text}", ephemeral=True)
+        responses = config.get("responses", {})
+        responses[trigger] = variants
+        await self.db.update_config_field(str(self.guild_id), "responses", responses)
+        await log_settings_change(
+            interaction, "Ответы бота",
+            f"**Действие:** добавлен ответ на триггер\n**Триггер:** `{trigger}`\n**Ответ:** {variants[0]}"
+        )
+        await interaction.followup.send(f"✅ На **{trigger}** бот теперь отвечает: {variants[0]}", ephemeral=True)
 
 
-class ReactionRemoveModal(discord.ui.Modal):
+class ResponseRemoveModal(discord.ui.Modal):
     def __init__(self, db: Database, guild_id: int):
-        super().__init__(title="Удалить реакцию")
+        super().__init__(title="Удалить ответ")
         self.db = db
         self.guild_id = guild_id
 
         self.trigger_input = discord.ui.TextInput(
             label="Слово-триггер для удаления",
-            placeholder="Например: спс",
+            placeholder="Например: привет",
             required=True,
             max_length=50
         )
@@ -1191,17 +1167,21 @@ class ReactionRemoveModal(discord.ui.Modal):
         trigger = self.trigger_input.value.lower().strip()
 
         config = await self.db.get_guild_config(str(self.guild_id))
-        reactions = config.get("reactions", {})
+        responses = config.get("responses", {})
 
-        if trigger not in reactions:
-            return await interaction.followup.send(f"❌ Реакция на **{trigger}** не найдена!", ephemeral=True)
+        if trigger not in responses:
+            return await interaction.followup.send(f"❌ Ответ на **{trigger}** не найден!", ephemeral=True)
 
-        del reactions[trigger]
-        await self.db.update_config_field(str(self.guild_id), "reactions", reactions)
-        await interaction.followup.send(f"✅ Реакция на **{trigger}** удалена!", ephemeral=True)
+        del responses[trigger]
+        await self.db.update_config_field(str(self.guild_id), "responses", responses)
+        await log_settings_change(
+            interaction, "Ответы бота",
+            f"**Действие:** удалён ответ на триггер\n**Триггер:** `{trigger}`"
+        )
+        await interaction.followup.send(f"✅ Ответ на **{trigger}** удалён!", ephemeral=True)
 
 
-class SetupReactionsView(discord.ui.View):
+class SetupResponsesView(discord.ui.View):
     def __init__(self, cog, db: Database, guild_id: int):
         super().__init__(timeout=300)
         self.cog = cog
@@ -1212,49 +1192,54 @@ class SetupReactionsView(discord.ui.View):
     @discord.ui.button(label="Справка", emoji="❓", style=discord.ButtonStyle.grey, row=1)
     async def btn_help(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
-        reactions = config.get("reactions", {})
+        responses = config.get("responses", {})
         lines = [
-            f"### Реакции — справка",
-            f"**Кастомных реакций:** {len(reactions)}",
+            "### Ответы бота — справка",
+            f"**Своих триггеров:** {len(responses)}",
             "",
             "**Как использовать:**",
-            "➕ **Добавить реакцию** — введите слово-триггер и эмодзи через запятую",
-            "🗑️ **Удалить реакцию** — введите слово-триггер для удаления",
-            "📋 **Список реакций** — посмотреть все триггеры",
+            "➕ **Добавить ответ** — слово-триггер и текст ответа",
+            "   Варианты перечисляйте через `|`, бот выберет случайный",
+            "🗑️ **Удалить ответ** — введите триггер для удаления",
+            "📋 **Список ответов** — посмотреть все триггеры",
             "",
-            "*Бот будет автоматически реагировать эмодзи на сообщения containing триггер.*",
+            "Бот отвечает текстом, когда в сообщении встречается триггер.",
+            "Между ответами одному пользователю — пауза 15 секунд.",
         ]
-        embed = discord.Embed(title="🎭 Реакции — справка", description="\n".join(lines), color=Colors.MAIN)
+        embed = discord.Embed(title="💬 Ответы бота — справка", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Добавить реакцию", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Добавить ответ", style=discord.ButtonStyle.success, row=0)
     async def btn_add(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ReactionAddModal(self.db, self.guild_id))
+        await interaction.response.send_modal(ResponseAddModal(self.db, self.guild_id))
 
-    @discord.ui.button(label="Удалить реакцию", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="Удалить ответ", style=discord.ButtonStyle.danger, row=0)
     async def btn_remove(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ReactionRemoveModal(self.db, self.guild_id))
+        await interaction.response.send_modal(ResponseRemoveModal(self.db, self.guild_id))
 
-    @discord.ui.button(label="Список реакций", style=discord.ButtonStyle.grey, row=1)
+    @discord.ui.button(label="Список ответов", style=discord.ButtonStyle.grey, row=1)
     async def btn_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
-        custom = config.get("reactions", {})
+        custom = config.get("responses", {})
 
         if not custom:
-            return await interaction.response.send_message("📋 Кастомных реакций нет.", ephemeral=True)
+            return await interaction.response.send_message("📋 Своих ответов пока нет — добавьте через «Добавить ответ».", ephemeral=True)
 
         lines = []
-        for trigger, emojis in custom.items():
-            emoji_list = emojis if isinstance(emojis, list) else [emojis]
-            lines.append(f"`{trigger}` → {' '.join(emoji_list)}")
+        for trigger, variants in custom.items():
+            variants_list = variants if isinstance(variants, list) else [variants]
+            first = str(variants_list[0]) if variants_list else "—"
+            extra = len(variants_list) - 1
+            suffix = f" и ещё {extra}" if extra > 0 else ""
+            lines.append(f"`{trigger}` → {first}{suffix}")
 
         embed = discord.Embed(
-            title="🎭 Кастомные реакции",
+            title="💬 Ответы бота",
             description="\n".join(lines[:30]),
             color=discord.Color(0x9b59b6),
         )
-        embed.set_footer(text=f"Всего: {len(custom)} | Управление через /setup → Реакции")
+        embed.set_footer(text=f"Всего: {len(custom)} | Управление через /setup → Ответы бота")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
