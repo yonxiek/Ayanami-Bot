@@ -75,6 +75,15 @@ class Levels(commands.Cog):
 
         if result['leveled_up']:
             await self.handle_level_up(message.guild, message.author, result['new_level'], cfg)
+            try:
+                from cogs.achievements import award_achievement
+                new_level = result['new_level']
+                awards = {"level_5": 5, "level_10": 10, "level_20": 20}
+                for aid, req in awards.items():
+                    if new_level >= req:
+                        await award_achievement(self.db, guild_id, user_id, aid, message.author)
+            except Exception:
+                pass
 
     async def handle_level_up(self, guild: discord.Guild, member: discord.Member, new_level: int, cfg: dict):
         if not cfg['level_up_enabled']:

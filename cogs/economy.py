@@ -48,9 +48,22 @@ class Economy(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild: return
-        await self.db.create_user(str(message.guild.id), str(message.author.id))
-        await self.db.conn.execute('UPDATE users SET total_messages = total_messages + 1 WHERE guild_id = ? AND user_id = ?', (str(message.guild.id), str(message.author.id)))
+        guild_id, user_id = str(message.guild.id), str(message.author.id)
+        await self.db.create_user(guild_id, user_id)
+        await self.db.conn.execute('UPDATE users SET total_messages = total_messages + 1 WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
         await self.db.conn.commit()
+        try:
+            cursor = await self.db.conn.execute('SELECT total_messages FROM users WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+            row = await cursor.fetchone()
+            total = row['total_messages'] if row else 0
+            from cogs.achievements import award_achievement
+            await award_achievement(self.db, guild_id, user_id, "first_message", message.author)
+            if total >= 100:
+                await award_achievement(self.db, guild_id, user_id, "messages_100", message.author)
+            if total >= 1000:
+                await award_achievement(self.db, guild_id, user_id, "messages_1000", message.author)
+        except Exception:
+            pass
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -64,9 +77,21 @@ class Economy(commands.Cog):
                 duration = (discord.utils.utcnow() - start_time).total_seconds()
                 minutes = int(duration / 60)
                 if minutes > 0:
-                    await self.db.create_user(str(member.guild.id), str(member.id))
-                    await self.db.conn.execute('UPDATE users SET total_voice_minutes = total_voice_minutes + ? WHERE guild_id = ? AND user_id = ?', (minutes, str(member.guild.id), str(member.id)))
+                    guild_id, user_id = str(member.guild.id), str(member.id)
+                    await self.db.create_user(guild_id, user_id)
+                    await self.db.conn.execute('UPDATE users SET total_voice_minutes = total_voice_minutes + ? WHERE guild_id = ? AND user_id = ?', (minutes, guild_id, user_id))
                     await self.db.conn.commit()
+                    try:
+                        cursor = await self.db.conn.execute('SELECT total_voice_minutes FROM users WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+                        row = await cursor.fetchone()
+                        total_voice = row['total_voice_minutes'] if row else 0
+                        from cogs.achievements import award_achievement
+                        if total_voice >= 60:
+                            await award_achievement(self.db, guild_id, user_id, "voice_60", member)
+                        if total_voice >= 300:
+                            await award_achievement(self.db, guild_id, user_id, "voice_300", member)
+                    except Exception:
+                        pass
 
     def format_time(self, minutes: int) -> str:
         if minutes < 60: return f"{minutes} мин."
@@ -102,6 +127,17 @@ class Economy(commands.Cog):
 
         streak = await self.db.get_daily_streak(str(interaction.guild.id), str(target.id))
 
+        ach_count = 0
+        try:
+            from cogs.achievements import award_achievement
+            if bal >= 1000:
+                await award_achievement(self.db, str(interaction.guild.id), str(target.id), "rich_1000", target)
+            if bal >= 10000:
+                await award_achievement(self.db, str(interaction.guild.id), str(target.id), "rich_10000", target)
+            ach_count = await self.db.count_achievements(str(interaction.guild.id), str(target.id))
+        except Exception:
+            pass
+
         titles = await self.db.get_user_titles(str(interaction.guild.id), str(target.id))
         active_title = next((t['emoji'] + " " + t['title'] for t in titles if t['active']), None)
         title_text = f"\n> {active_title}" if active_title else ""
@@ -132,7 +168,8 @@ class Economy(commands.Cog):
             f"> 🔗 Входы в голос: **{voice_joins}**\n"
             f"> 😊 Реакции: **{reactions}**\n"
             f"> 🔥 Серия дней: **{streak}**\n\n"
-            f"### 💰 Баланс: **{bal}** {AyanamiUI.E_RP}\n\n"
+            f"### 💰 Баланс: **{bal}** {AyanamiUI.E_RP}\n"
+            f"> 🏆 Достижения: **{ach_count}** из 19\n\n"
             f"### 📈 Уровень {level} | Ранг #{rank_pos}{booster_text}\n"
             f"> `{bar}` `{xp_in_level}/{xp_needed}` XP"
         )

@@ -50,6 +50,11 @@ class HelpCog(commands.Cog):
         "Shop": ("🛒 Магазин", "Покупка товаров"),
         "Levels": ("📊 Уровни", "Опыт и роли"),
         "Quests": ("📜 Квесты", "Задания и награды"),
+        "Achievements": ("🏆 Достижения", "Список наград за активность"),
+        "Reminders": ("⏰ Напоминания", "Личные напоминания"),
+        "Duels": ("⚔️ Дуэли", "Сражения с другими игроками"),
+        "WeeklyStats": ("📈 Статистика", "Топы за неделю"),
+        "Chat": ("🗣️ Чат с ИИ", "Общение с ботом через Gemini"),
     }
 
     def _gather_commands(self, config, private_cmds, user_role_ids, is_admin) -> list[tuple[str, str]]:

@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from ui_components import AyanamiUI, Icons, Colors
 from db import Database
+import config
 
 
 async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
@@ -75,6 +76,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Логирование", value="logging", emoji="📋", description="Канал логов и отслеживаемые события"),
             discord.SelectOption(label="Приветствия", value="greetings", emoji="👋", description="Привет, прощание, буст и автороли"),
             discord.SelectOption(label="Ответы бота", value="reactions", emoji="💬", description="Авто-ответы на определённые слова"),
+            discord.SelectOption(label="Чат с ИИ", value="chat", emoji="🗣️", description="Общение с ботом через Gemini (нужен ключ)"),
             discord.SelectOption(label="Reaction Roles", value="reaction_roles", emoji="🎯", description="Роли по реакциям на сообщениях"),
             discord.SelectOption(label="Приватные голосовые", value="voice", emoji="🔊", description="Триггер-канал и типы приватных комнат"),
             discord.SelectOption(label="Каналы и Роли", value="channels", emoji="📢", description="Жалобы, логи повышений и персонал"),
@@ -106,6 +108,7 @@ class DashboardView(discord.ui.LayoutView):
             "logging": lambda: SetupLoggingView(self.cog, db, self.guild_id),
             "greetings": lambda: SetupGreetingsView(self.cog, db, self.guild_id),
             "reactions": lambda: SetupResponsesView(self.cog, db, self.guild_id),
+            "chat": lambda: SetupChatView(self.cog, db, self.guild_id),
             "reaction_roles": lambda: SetupReactionRolesView(self.cog, db, self.guild_id),
             "voice": lambda: SetupVoiceRoomsView(self.cog, db, self.guild_id),
             "roles": lambda: SetupRolesView(self.cog, db, self.guild_id),
@@ -487,6 +490,93 @@ class CooldownSettingsView(discord.ui.View):
             "Роли администраторов и персонала не ограничиваются кулдауном автоматически.",
         ]
         embed = discord.Embed(title="⚡ Текущие настройки кулдауна", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class SetupChatView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="🗣️ Канал для чата с ИИ (пусто = по упоминанию)",
+        min_values=0, max_values=1, row=0
+    )
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        await interaction.response.defer(ephemeral=True)
+        value = select.values[0].id if select.values else None
+        await self.db.update_config_field(str(self.guild_id), "chat_channel_id", value)
+        await log_settings_change(
+            interaction, "Чат с ИИ",
+            f"**Действие:** изменён канал чата\n**Канал:** {f'<#{value}>' if value else 'любой (по упоминанию)'}"
+        )
+        text = f"✅ Канал чата ИИ: <#{value}>" if value else "✅ Чат будет работать по упоминанию бота (в любом канале)."
+        await interaction.followup.send(text, ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.Select,
+        placeholder="⏱️ Кулдаун между ответами ИИ",
+        min_values=1, max_values=1,
+        options=[
+            discord.SelectOption(label="2 секунды", value="2", emoji="⚡"),
+            discord.SelectOption(label="5 секунд", value="5", emoji="⏱️"),
+            discord.SelectOption(label="10 секунд", value="10", emoji="⏱️"),
+            discord.SelectOption(label="30 секунд", value="30", emoji="🐢"),
+            discord.SelectOption(label="60 секунд", value="60", emoji="🐢"),
+        ],
+        row=1
+    )
+    async def select_cooldown(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer(ephemeral=True)
+        seconds = int(select.values[0])
+        await self.db.update_config_field(str(self.guild_id), "chat_cooldown_seconds", seconds)
+        await log_settings_change(
+            interaction, "Чат с ИИ",
+            f"**Действие:** изменён кулдаун чата\n**Значение:** {seconds} с"
+        )
+        await interaction.followup.send(f"✅ Кулдаун чата ИИ: **{seconds} с**.", ephemeral=True)
+
+    @discord.ui.button(label="Включить чат", emoji="🟢", style=discord.ButtonStyle.success, row=2)
+    async def btn_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        currently = config.get("chat_enabled", False)
+        new_state = not currently
+        await self.db.update_config_field(str(self.guild_id), "chat_enabled", new_state)
+        await log_settings_change(
+            interaction, "Чат с ИИ",
+            f"**Действие:** чат с ИИ {'включён' if new_state else 'выключен'}"
+        )
+        button.label = "Выключить чат" if new_state else "Включить чат"
+        button.style = discord.ButtonStyle.danger if new_state else discord.ButtonStyle.success
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(f"✅ Чат с ИИ {'включён' if new_state else 'выключен'}.", ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from config import GEMINI_API_KEY, GEMINI_MODEL
+        guild_cfg = await self.db.get_guild_config(str(self.guild_id))
+        enabled = guild_cfg.get("chat_enabled", False)
+        ch = guild_cfg.get("chat_channel_id")
+        cooldown = guild_cfg.get("chat_cooldown_seconds", 3)
+        has_key = bool(GEMINI_API_KEY)
+
+        lines = [
+            f"### Чат с ИИ",
+            f"**Статус:** {'🟢 Включён' if enabled else '🔴 Выключен'}",
+            f"**Канал:** {f'<#{ch}>' if ch else 'любой (по упоминанию бота)'}",
+            f"**Кулдаун:** {cooldown} с",
+            f"**Модель:** `{GEMINI_MODEL}`",
+            f"**API-ключ:** {'✅ задан' if has_key else '❌ НЕ задан (см. `.env` → GEMINI_API_KEY)'}",
+            "",
+            "Бесплатный ключ: https://aistudio.google.com/apikey",
+        ]
+        embed = discord.Embed(title="🗣️ Чат с ИИ", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

@@ -61,6 +61,12 @@ BLOXLINK_API_KEY: str = get("BLOXLINK_API_KEY", "") or ""
 #: Вебхук для «снайпа» / событий (необязательный)
 SNIPE_WEBHOOK_URL: str = get("SNIPE_WEBHOOK_URL", "") or ""
 
+# --- Чат с ИИ (опционально) ---
+#: Бесплатный ключ Google AI Studio: https://aistudio.google.com/apikey
+GEMINI_API_KEY: str = get("GEMINI_API_KEY", "") or ""
+#: Модель Gemini (на случай смены доступных моделей)
+GEMINI_MODEL: str = get("GEMINI_MODEL", "gemini-2.0-flash") or "gemini-2.0-flash"
+
 
 def require_token() -> str:
     """Вернуть токен или поднять ошибку, если он не задан."""

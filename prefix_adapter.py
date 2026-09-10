@@ -97,6 +97,10 @@ class InteractionAdapter:
         if msg is not None:
             await msg.edit(*args, **kwargs)
 
+    async def original_response(self):
+        """Имитация `interaction.original_response()` — последнее отправленное сообщение."""
+        return self.response._last_message
+
     def __getattr__(self, item):
         # Любые прочие атрибуты берём из контекста (например, `bot`,
         # кастомные поля, если потребуются).

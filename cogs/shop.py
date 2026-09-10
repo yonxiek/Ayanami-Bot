@@ -169,6 +169,12 @@ class Shop(commands.Cog):
         if not success:
             return await interaction.followup.send("❌ Ошибка при покупке.", ephemeral=True)
 
+        try:
+            from cogs.achievements import award_achievement
+            await award_achievement(self.db, guild_id, user_id, "first_buy", interaction.user)
+        except Exception:
+            pass
+
         if item['item_type'] == 'role' and item.get('role_id'):
             role = interaction.guild.get_role(int(item['role_id']))
             if role:

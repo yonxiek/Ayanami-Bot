@@ -277,6 +277,18 @@ class MiniGames(commands.Cog):
         _, emoji, name, amount_str, color, amount = result
         if amount > 0:
             await self.db.update_user_balance(str(interaction.guild.id), str(interaction.user.id), amount)
+            try:
+                from cogs.achievements import award_achievement
+                guild_id, user_id = str(interaction.guild.id), str(interaction.user.id)
+                await award_achievement(self.db, guild_id, user_id, "roulette_win", interaction.user)
+                user_data = await self.db.get_or_create_user(guild_id, user_id)
+                bal = user_data.get("balance", 0)
+                if bal >= 1000:
+                    await award_achievement(self.db, guild_id, user_id, "rich_1000", interaction.user)
+                if bal >= 10000:
+                    await award_achievement(self.db, guild_id, user_id, "rich_10000", interaction.user)
+            except Exception:
+                pass
         elif amount < 0:
             await self.db.update_user_balance(str(interaction.guild.id), str(interaction.user.id), amount)
         user_data = await self.db.get_or_create_user(str(interaction.guild.id), str(interaction.user.id))

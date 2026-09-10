@@ -167,12 +167,23 @@ class Quests(commands.Cog):
         except Exception:
             pass
 
+    async def _award_quest_achievements(self, guild_id: str, user_id: str, member: discord.Member):
+        try:
+            from cogs.achievements import award_achievement
+            await award_achievement(self.db, guild_id, user_id, "first_quest", member)
+            quests_done = await self.db.count_completed_quests(guild_id, user_id)
+            if quests_done >= 10:
+                await award_achievement(self.db, guild_id, user_id, "quests_10", member)
+        except Exception:
+            pass
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
         completed = await self.db.increment_quest_progress(str(message.guild.id), str(message.author.id), "messages")
         if completed:
+            await self._award_quest_achievements(str(message.guild.id), str(message.author.id), message.author)
             for q in completed:
                 try:
                     await message.author.send(
@@ -196,6 +207,7 @@ class Quests(commands.Cog):
                 if minutes > 0:
                     completed = await self.db.increment_quest_progress(str(guild_id), str(user_id), "voice_join", minutes)
                     if completed:
+                        await self._award_quest_achievements(str(guild_id), str(user_id), member)
                         for q in completed:
                             try:
                                 await member.send(
@@ -210,6 +222,7 @@ class Quests(commands.Cog):
             return
         completed = await self.db.increment_quest_progress(str(interaction.guild.id), str(interaction.user.id), "commands")
         if completed:
+            await self._award_quest_achievements(str(interaction.guild.id), str(interaction.user.id), interaction.user)
             for q in completed:
                 try:
                     await interaction.user.send(
@@ -224,6 +237,7 @@ class Quests(commands.Cog):
             return
         completed = await self.db.increment_quest_progress(str(reaction.message.guild.id), str(user.id), "reactions")
         if completed:
+            await self._award_quest_achievements(str(reaction.message.guild.id), str(user.id), user)
             for q in completed:
                 try:
                     await user.send(
@@ -308,6 +322,15 @@ class Quests(commands.Cog):
                 color=Colors.ERROR,
             )
             return await interaction.followup.send(embed=embed)
+
+        try:
+            from cogs.achievements import award_achievement
+            if streak >= 7:
+                await award_achievement(self.db, guild_id, user_id, "daily_7", interaction.user)
+            if streak >= 3:
+                await award_achievement(self.db, guild_id, user_id, "daily_3", interaction.user)
+        except Exception:
+            pass
 
         streak_bonus = ""
         if streak > 1:

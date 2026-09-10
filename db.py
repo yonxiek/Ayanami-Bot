@@ -183,6 +183,39 @@ class Database:
                 multiplier REAL DEFAULT 1.5,
                 expires_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                channel_id TEXT,
+                remind_at TEXT,
+                text TEXT,
+                done INTEGER DEFAULT 0
+            )''',
+            '''CREATE TABLE IF NOT EXISTS achievements (
+                guild_id TEXT,
+                user_id TEXT,
+                achievement_id TEXT,
+                earned_at TEXT,
+                PRIMARY KEY (guild_id, user_id, achievement_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS duel_stats (
+                guild_id TEXT,
+                user_id TEXT,
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                draws INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS weekly_stats (
+                guild_id TEXT,
+                user_id TEXT,
+                week_key TEXT,
+                messages INTEGER DEFAULT 0,
+                voice_minutes INTEGER DEFAULT 0,
+                commands INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id, week_key)
             )'''
         ]
         
@@ -915,3 +948,180 @@ class Database:
         )
         rows = await cursor.fetchall()
         return {row['activity_type']: row['amount'] for row in rows}
+
+    # ==========================================
+    #     REMINDERS (напоминания)
+    # ==========================================
+
+    async def add_reminder(self, guild_id: str, user_id: str, channel_id: int, remind_at: str, text: str):
+        await self.conn.execute(
+            'INSERT INTO reminders (guild_id, user_id, channel_id, remind_at, text) VALUES (?, ?, ?, ?, ?)',
+            (guild_id, user_id, str(channel_id), remind_at, text)
+        )
+        await self.conn.commit()
+
+    async def get_active_reminder_count(self, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) AS cnt FROM reminders WHERE user_id = ? AND done = 0',
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        return row['cnt'] if row else 0
+
+    async def get_due_reminders(self) -> list:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM reminders WHERE done = 0 AND remind_at <= ?',
+            (now,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def mark_reminder_done(self, reminder_id: int):
+        await self.conn.execute(
+            'UPDATE reminders SET done = 1 WHERE id = ?',
+            (reminder_id,)
+        )
+        await self.conn.commit()
+
+    async def delete_reminder(self, reminder_id: int, user_id: str) -> bool:
+        cursor = await self.conn.execute(
+            'DELETE FROM reminders WHERE id = ? AND user_id = ?',
+            (reminder_id, user_id)
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def get_user_reminders(self, user_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT id, guild_id, channel_id, remind_at, text FROM reminders WHERE user_id = ? AND done = 0 ORDER BY remind_at',
+            (user_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def clear_expired_reminders(self, keep_days: int = 7):
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+        await self.conn.execute(
+            'DELETE FROM reminders WHERE done = 1 AND remind_at < ?',
+            (cutoff,)
+        )
+        await self.conn.commit()
+
+    # ==========================================
+    #     ACHIEVEMENTS (достижения)
+    # ==========================================
+
+    async def award_achievement(self, guild_id: str, user_id: str, achievement_id: str) -> bool:
+        """Возвращает True, если достижение выдано впервые."""
+        from datetime import datetime, timezone
+        cursor = await self.conn.execute(
+            'SELECT 1 FROM achievements WHERE guild_id = ? AND user_id = ? AND achievement_id = ?',
+            (guild_id, user_id, achievement_id)
+        )
+        if await cursor.fetchone():
+            return False
+        await self.conn.execute(
+            'INSERT INTO achievements (guild_id, user_id, achievement_id, earned_at) VALUES (?, ?, ?, ?)',
+            (guild_id, user_id, achievement_id, datetime.now(timezone.utc).isoformat())
+        )
+        await self.conn.commit()
+        return True
+
+    async def get_user_achievements(self, guild_id: str, user_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT achievement_id, earned_at FROM achievements WHERE guild_id = ? AND user_id = ? ORDER BY earned_at',
+            (guild_id, user_id)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def count_achievements(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) AS cnt FROM achievements WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        return row['cnt'] if row else 0
+
+    async def count_completed_quests(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) AS cnt FROM user_quests WHERE guild_id = ? AND user_id = ? AND completed = 1',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        return row['cnt'] if row else 0
+
+    # ==========================================
+    #     DUEL STATS (дуэли)
+    # ==========================================
+
+    async def add_duel_result(self, guild_id: str, user_id: str, result: str):
+        """result: 'win' | 'loss' | 'draw'"""
+        column = {'win': 'wins', 'loss': 'losses', 'draw': 'draws'}.get(result, 'draws')
+        await self.conn.execute(
+            f'INSERT INTO duel_stats (guild_id, user_id, wins, losses, draws) VALUES (?, ?, ?, ?, ?) '
+            f'ON CONFLICT(guild_id, user_id) DO UPDATE SET {column} = {column} + 1',
+            (guild_id, user_id, 1 if result == 'win' else 0, 1 if result == 'loss' else 0, 1 if result == 'draw' else 0)
+        )
+        await self.conn.commit()
+
+    async def get_duel_stats(self, guild_id: str, user_id: str) -> dict:
+        cursor = await self.conn.execute(
+            'SELECT wins, losses, draws FROM duel_stats WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await self.conn.execute(
+                'INSERT OR IGNORE INTO duel_stats (guild_id, user_id) VALUES (?, ?)',
+                (guild_id, user_id)
+            )
+            await self.conn.commit()
+            return {'wins': 0, 'losses': 0, 'draws': 0}
+        return dict(row)
+
+    # ==========================================
+    #     WEEKLY STATS (недельная статистика)
+    # ==========================================
+
+    async def increment_weekly(self, guild_id: str, user_id: str, week_key: str, field: str, amount: int = 1):
+        if field not in ('messages', 'voice_minutes', 'commands'):
+            return
+        await self.conn.execute(
+            f'INSERT INTO weekly_stats (guild_id, user_id, week_key, messages, voice_minutes, commands) VALUES (?, ?, ?, ?, ?, ?) '
+            f'ON CONFLICT(guild_id, user_id, week_key) DO UPDATE SET {field} = {field} + ?',
+            (guild_id, user_id, week_key,
+             1 if field == 'messages' else 0,
+             1 if field == 'voice_minutes' else 0,
+             1 if field == 'commands' else 0,
+             amount)
+        )
+        await self.conn.commit()
+
+    async def get_weekly_top(self, guild_id: str, week_key: str, field: str, limit: int = 10) -> list:
+        cursor = await self.conn.execute(
+            f'SELECT user_id, {field} AS amount FROM weekly_stats '
+            f'WHERE guild_id = ? AND week_key = ? AND {field} > 0 ORDER BY {field} DESC LIMIT ?',
+            (guild_id, week_key, limit)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def prune_weekly_stats(self, keep_weeks: int = 4):
+        from datetime import datetime, timedelta
+        iso = datetime.now().isocalendar()
+        current_week = f"{iso[0]}-W{iso[1]:02d}"
+        cursor = await self.conn.execute('SELECT DISTINCT week_key FROM weekly_stats')
+        for row in await cursor.fetchall():
+            key = row['week_key']
+            parts = key.split('-W')
+            if len(parts) != 2:
+                continue
+            try:
+                year, week = int(parts[0]), int(parts[1])
+            except ValueError:
+                continue
+            current_year, current_week_num = iso[0], iso[1]
+            weeks_ago = (current_year - year) * 52 + (current_week_num - week)
+            if weeks_ago >= keep_weeks:
+                await self.conn.execute('DELETE FROM weekly_stats WHERE week_key = ?', (key,))
+        await self.conn.commit()
