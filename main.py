@@ -4,6 +4,7 @@ from discord.ext import commands
 import os
 import sys
 import logging
+import time
 import traceback
 from db import Database
 
@@ -108,9 +109,69 @@ async def check_modules_slash(interaction: discord.Interaction) -> bool:
         error_msg = f"❌ Модуль `{cog_name}` отключен на этом сервере."
         await interaction.response.send_message(error_msg, ephemeral=True)
         return False
+
+    if interaction.type == discord.InteractionType.application_command:
+        seconds, bypass = _get_cooldown_config(config)
+        if not _cooldown_bypassed(interaction.user.roles, config, bypass):
+            remaining = _cooldown_seconds_remaining(
+                interaction.guild.id, interaction.user.id,
+                interaction.command.qualified_name, seconds
+            )
+            if remaining > 0:
+                embed = discord.Embed(
+                    title="⏳ Перезарядка",
+                    description=f"**{interaction.user.name}**, команда `/{interaction.command.qualified_name}` ещё перезаряжается!",
+                    color=discord.Color(0x2b2d31),
+                )
+                embed.add_field(name="Попробуйте через:", value=f"**{int(round(remaining))}** секунд", inline=False)
+                embed.set_footer(text=interaction.user.name)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return False
     return True
 
 bot.tree.interaction_check = check_modules_slash
+
+
+_command_cooldowns: dict[tuple[str, str, str], float] = {}
+
+
+def _get_cooldown_config(config) -> tuple[int, list[str]]:
+    seconds = config.get("command_cooldown_seconds", 8)
+    try:
+        seconds = max(0, int(seconds))
+    except (TypeError, ValueError):
+        seconds = 8
+    bypass = [str(r) for r in (config.get("command_cooldown_bypass_roles", []) or [])]
+    return seconds, bypass
+
+
+def _has_bypass_role(user_roles, bypass_ids: list[str]) -> bool:
+    if not bypass_ids:
+        return False
+    own = {str(r.id) for r in user_roles}
+    return bool(set(bypass_ids) & own)
+
+
+def _cooldown_bypassed(user_roles, config, bypass_ids: list[str]) -> bool:
+    """Кулдаун не действует для выбранных ролей, а также админ- и персонал-ролей."""
+    if _has_bypass_role(user_roles, bypass_ids):
+        return True
+    auto = [str(r) for r in ((config.get("admin_roles", []) or []) + (config.get("staff_roles", []) or []))]
+    return _has_bypass_role(user_roles, auto)
+
+
+def _cooldown_seconds_remaining(guild_id, user_id, command_name, seconds) -> float:
+    """Возвращает 0, если команду можно вызывать; иначе — сколько секунд осталось."""
+    if not seconds:
+        return 0.0
+    now = time.monotonic()
+    key = (str(guild_id), str(user_id), command_name)
+    last = _command_cooldowns.get(key, 0.0)
+    remaining = last + seconds - now
+    if remaining > 0:
+        return remaining
+    _command_cooldowns[key] = now
+    return 0.0
 
 
 @bot.tree.error
@@ -227,6 +288,18 @@ async def check_modules_prefix(ctx):
         error_msg = f"❌ Модуль `{ctx.command.cog_name}` отключен на этом сервере."
         await ctx.send(error_msg, delete_after=5)
         return False
+
+    seconds, bypass = _get_cooldown_config(config)
+    if not _cooldown_bypassed(ctx.author.roles, config, bypass):
+        remaining = _cooldown_seconds_remaining(
+            ctx.guild.id, ctx.author.id, ctx.command.qualified_name, seconds
+        )
+        if remaining > 0:
+            await ctx.send(
+                f"⏳ Команда `{ctx.command.qualified_name}` ещё перезаряжается! Попробуйте через **{int(round(remaining))}** секунд.",
+                delete_after=5,
+            )
+            return False
     return True
 
 

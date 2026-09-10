@@ -217,6 +217,9 @@ class SetupAdminView(discord.ui.View):
             f"**Бустер XP-бонус:** +{int(boost*100)}%",
             f"**Модули включены:** {', '.join(enabled) if enabled else 'никакие'}",
         ]
+        cd_seconds = config.get("command_cooldown_seconds", 8) or 0
+        lines.append(f"**Кулдаун команд:** {'выключен' if not cd_seconds else f'{cd_seconds} с'}")
+        lines.append(f"**Роли без кулдауна:** {role_list(config.get('command_cooldown_bypass_roles', []))}")
         if disabled:
             lines.append(f"**Модули выключены:** {', '.join(disabled)}")
         lines.append("\n*Выберите роль или канал в меню ниже для изменения.*")
@@ -327,6 +330,14 @@ class SetupAdminView(discord.ui.View):
         modal.prefix_input.default = config.get("prefix", "!")
         await interaction.response.send_modal(modal)
 
+    @discord.ui.button(label="Кулдаун команд", emoji="⚡", style=discord.ButtonStyle.grey, row=4)
+    async def btn_cooldown(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = CooldownSettingsView(self.cog, self.db, self.guild_id)
+        await interaction.response.send_message(
+            "⚡ **Кулдаун команд**\nВыберите длительность перезарядки и роли, для которых кулдаун не действует:",
+            view=view, ephemeral=True
+        )
+
 
 class PrefixModal(discord.ui.Modal, title="Префикс сервера"):
     prefix_input = discord.ui.TextInput(
@@ -405,6 +416,79 @@ class BotStatusModal(discord.ui.Modal, title="Статус бота"):
         else:
             await interaction.client.change_presence(activity=None)
             await interaction.response.send_message("✅ Статус снят.", ephemeral=True)
+
+
+class CooldownSettingsView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="⚡ Роли без кулдауна", min_values=0, max_values=25, row=0)
+    async def select_bypass_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        await interaction.response.defer(ephemeral=True)
+        roles = [r.id for r in select.values]
+        await self.db.update_config_field(str(self.guild_id), "command_cooldown_bypass_roles", roles)
+        await log_settings_change(
+            interaction, "Командный кулдаун",
+            f"**Действие:** изменены роли без кулдауна\n**Роли:** {', '.join([r.mention for r in select.values]) if select.values else 'очищены'}"
+        )
+        if select.values:
+            text = "✅ Роли без кулдауна: " + ", ".join([r.mention for r in select.values])
+        else:
+            text = "✅ Роли без кулдауна очищены."
+        await interaction.followup.send(text, ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.Select,
+        placeholder="⏱️ Длительность кулдауна",
+        min_values=1, max_values=1,
+        options=[
+            discord.SelectOption(label="Выключен", value="0", emoji="🚫", description="Кулдаун на команды отключён"),
+            discord.SelectOption(label="3 секунды", value="3", emoji="⚡", description="Минимальная задержка"),
+            discord.SelectOption(label="5 секунд", value="5", emoji="⏱️", description="Быстрая перезарядка"),
+            discord.SelectOption(label="8 секунд", value="8", emoji="⏱️", description="Стандартная перезарядка"),
+            discord.SelectOption(label="10 секунд", value="10", emoji="⏱️", description="Умеренная перезарядка"),
+            discord.SelectOption(label="15 секунд", value="15", emoji="⏱️", description="Для активных серверов"),
+            discord.SelectOption(label="30 секунд", value="30", emoji="🐢", description="Долгая перезарядка"),
+            discord.SelectOption(label="60 секунд", value="60", emoji="🐢", description="Максимальная перезарядка"),
+        ],
+        row=1
+    )
+    async def select_seconds(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer(ephemeral=True)
+        seconds = int(select.values[0])
+        await self.db.update_config_field(str(self.guild_id), "command_cooldown_seconds", seconds)
+        await log_settings_change(
+            interaction, "Командный кулдаун",
+            f"**Действие:** изменена длительность кулдауна\n**Значение:** {'выключен' if seconds == 0 else f'{seconds} с'}"
+        )
+        text = "🚫 Кулдаун на команды выключен." if seconds == 0 else f"⚡ Кулдаун на команды: **{seconds} с**."
+        await interaction.followup.send(text, ephemeral=True)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        seconds = config.get("command_cooldown_seconds", 8) or 0
+        bypass_ids = config.get("command_cooldown_bypass_roles", []) or []
+        parts = []
+        for rid in bypass_ids[:25]:
+            r = interaction.guild.get_role(int(rid))
+            parts.append(r.mention if r else f"`{rid}`")
+        lines = [
+            f"### Командный кулдаун",
+            f"**Длительность:** {'выключен' if not seconds else f'{seconds} с'}",
+            f"**Роли без кулдауна:** {', '.join(parts) if parts else 'не заданы'}",
+            "",
+            "Кулдаун действует по каждой команде отдельно и на каждого участника.",
+            "Участники с ролями без кулдауна могут использовать команды без пауз.",
+            "Роли администраторов и персонала не ограничиваются кулдауном автоматически.",
+        ]
+        embed = discord.Embed(title="⚡ Текущие настройки кулдауна", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # ==========================================
