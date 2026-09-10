@@ -5,6 +5,14 @@ from ui_components import AyanamiUI, Icons, Colors
 from db import Database
 
 
+async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
+    try:
+        if interaction.guild:
+            interaction.client.dispatch("settings_log", interaction.guild, interaction.user, title, details)
+    except Exception:
+        pass
+
+
 
 # ==========================================
 #   КНОПКА «НАЗАД»
@@ -62,7 +70,7 @@ class DashboardView(discord.ui.LayoutView):
         container.add_item(discord.ui.TextDisplay("*Выберите модуль в меню ниже. В каждом разделе есть кнопка «Текущие настройки» или «Справка».*"))
 
         options = [
-            discord.SelectOption(label="Основные настройки", value="general", description="Настройки сервера, бустер-бонус, авто-модерация"),
+            discord.SelectOption(label="Основные настройки", value="general", emoji="⚙️", description="Настройки сервера, бустер-бонус, модули"),
             discord.SelectOption(label="Рейды", value="raids", emoji="⚔️", description="Роли и каналы для организации рейдов"),
             discord.SelectOption(label="Логирование", value="logging", emoji="📋", description="Канал логов и отслеживаемые события"),
             discord.SelectOption(label="Приветствия", value="greetings", emoji="👋", description="Привет, прощание, буст и автороли"),
@@ -73,7 +81,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Роли", value="roles", emoji="🛡️", description="Роль чёрного списка и иммунитета"),
             discord.SelectOption(label="Безопасность", value="security", emoji="🚨", description="Anti-Nuke защита и пороги срабатывания"),
             discord.SelectOption(label="Уровни", value="levels", emoji="📊", description="Система уровней, XP, роли за уровни"),
-            discord.SelectOption(label="Авто-модерация", value="automod", emoji="🤖", description="Анти-спам, капс, ссылки, 크аптча"),
+            discord.SelectOption(label="Авто-модерация", value="automod", emoji="🤖", description="Анти-спам, капс, ссылки, капча"),
             discord.SelectOption(label="Приватные команды", value="private", emoji="🔐", description="Скрытие команд от определённых ролей"),
             discord.SelectOption(label="Права команд", value="perms", emoji="🔒", description="Доступ к командам по ролям"),
             discord.SelectOption(label="Квесты", value="quests", emoji="📜", description="Ежедневные квесты и награды за прогресс"),
@@ -164,6 +172,10 @@ class BoosterBoostModal(discord.ui.Modal):
         except ValueError:
             return await interaction.followup.send("❌ Введите число от 0 до 200!", ephemeral=True)
         await self.db.update_config_field(str(self.guild_id), "booster_xp_boost", boost / 100)
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменён бустер XP-бонус\n**Значение:** +{boost}%"
+        )
         await interaction.followup.send(f"✅ Бустер XP-бонус: **+{boost}%**", ephemeral=True)
 
 
@@ -207,7 +219,7 @@ class SetupAdminView(discord.ui.View):
         ]
         if disabled:
             lines.append(f"**Модули выключены:** {', '.join(disabled)}")
-        lines.append("\n*Выберите角色 или канал в меню ниже для изменения.*")
+        lines.append("\n*Выберите роль или канал в меню ниже для изменения.*")
 
         embed = discord.Embed(title="⚙️ Текущие настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
@@ -215,36 +227,50 @@ class SetupAdminView(discord.ui.View):
 
     @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=4)
     async def btn_settings_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = await self._build_settings_info(interaction)
+        embed = await self._build_settings_info(interaction)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Роли администраторов", min_values=0, max_values=25, row=0)
+    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="👑 Роли администраторов", min_values=0, max_values=25, row=0)
     async def select_admin_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
         await interaction.response.defer(ephemeral=True)
         await self.db.update_config_field(str(self.guild_id), "admin_roles", [r.id for r in select.values])
         if select.values:
-            await interaction.followup.send(f"✅ Роли администраторов: {', '.join([r.mention for r in select.values])}", ephemeral=True)
+            text = "✅ Роли администраторов: " + ", ".join([r.mention for r in select.values])
         else:
-            await interaction.followup.send("✅ Роли администраторов очищены.", ephemeral=True)
+            text = "✅ Роли администраторов очищены."
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменены роли администраторов\n**Роли:** {', '.join([r.mention for r in select.values]) if select.values else 'очищены'}"
+        )
+        await interaction.followup.send(text, ephemeral=True)
 
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Роли персонала", min_values=0, max_values=25, row=1)
+    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="🛠️ Роли персонала", min_values=0, max_values=25, row=1)
     async def select_staff_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
         await interaction.response.defer(ephemeral=True)
         await self.db.update_config_field(str(self.guild_id), "staff_roles", [r.id for r in select.values])
         if select.values:
-            await interaction.followup.send(f"✅ Роли персонала: {', '.join([r.mention for r in select.values])}", ephemeral=True)
+            text = "✅ Роли персонала: " + ", ".join([r.mention for r in select.values])
         else:
-            await interaction.followup.send("✅ Роли персонала очищены.", ephemeral=True)
+            text = "✅ Роли персонала очищены."
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменены роли персонала\n**Роли:** {', '.join([r.mention for r in select.values]) if select.values else 'очищены'}"
+        )
+        await interaction.followup.send(text, ephemeral=True)
 
     @discord.ui.select(
         cls=discord.ui.ChannelSelect,
         channel_types=[discord.ChannelType.text],
-        placeholder="Системный канал (уведомления бота)",
+        placeholder="🔔 Системный канал (уведомления бота)",
         max_values=1, row=2
     )
     async def select_system_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         await interaction.response.defer(ephemeral=True)
         await self.db.update_config_field(str(self.guild_id), "system_channel_id", select.values[0].id)
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменён системный канал\n**Канал:** {select.values[0].mention}"
+        )
         await interaction.followup.send(f"✅ Системный канал: {select.values[0].mention}", ephemeral=True)
 
     @discord.ui.select(
@@ -274,6 +300,10 @@ class SetupAdminView(discord.ui.View):
         text = f"✅ Включены: {', '.join(enabled) if enabled else 'ничего'}"
         if disabled:
             text += f"\n❌ Выключены: {', '.join(disabled)}"
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменены модули\n**Включены:** {', '.join(enabled) if enabled else 'ничего'}"
+        )
         await interaction.followup.send(text, ephemeral=True)
 
     @discord.ui.button(label="Бустер XP-бонус", emoji="⚡", style=discord.ButtonStyle.green, row=4)
@@ -316,6 +346,10 @@ class PrefixModal(discord.ui.Modal, title="Префикс сервера"):
         if not prefix:
             return await interaction.response.send_message("❌ Префикс не может быть пустым!", ephemeral=True)
         await self.db.update_config_field(str(self.guild_id), "prefix", prefix)
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменён префикс\n**Значение:** `{prefix}`"
+        )
         await interaction.response.send_message(f"✅ Префикс сервера: `{prefix}`", ephemeral=True)
 
 
@@ -356,6 +390,10 @@ class BotStatusModal(discord.ui.Modal, title="Статус бота"):
         text = self.status_text.value.strip() if self.status_text.value else ""
         await self.db.update_config_field(str(self.guild_id), "bot_status_type", type_str)
         await self.db.update_config_field(str(self.guild_id), "bot_status_text", text)
+        await log_settings_change(
+            interaction, "Основные настройки",
+            f"**Действие:** изменён статус бота\n**Тип:** `{type_str}`\n**Текст:** `{text or '—'}`"
+        )
 
         if text:
             if type_str == "streaming":
@@ -454,7 +492,7 @@ class SetupLoggingView(discord.ui.View):
         self.guild_id = guild_id
         self.add_item(BackButton())
 
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=3)
     async def btn_settings_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
         log_ch = config.get("log_channel_id")
@@ -477,6 +515,7 @@ class SetupLoggingView(discord.ui.View):
             "pun_blacklist": "Чёрный список", "pun_unblacklist": "Снятие с ЧС",
             "emoji_sticker": "Эмодзи/стикеры", "soundboard": "Саундборд",
             "commands": "Команды", "avatar": "Аватар/баннер", "pins": "Закрепление",
+            "settings": "Настройки",
         }
         enabled = [event_names.get(k, k) for k, v in log_events.items() if v]
         disabled = [event_names.get(k, k) for k, v in log_events.items() if not v]
@@ -497,12 +536,16 @@ class SetupLoggingView(discord.ui.View):
     async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         await interaction.response.defer()
         await self.db.update_config_field(str(self.guild_id), "log_channel_id", select.values[0].id)
+        await log_settings_change(
+            interaction, "Логирование",
+            f"**Действие:** изменён канал логов\n**Канал:** {select.values[0].mention}"
+        )
         await interaction.followup.send(f"✅ Канал логов: {select.values[0].mention}", ephemeral=True)
 
     @discord.ui.select(
         cls=discord.ui.Select,
-        placeholder="Что логировать?",
-        min_values=0, max_values=32,
+        placeholder="📁 Основные события",
+        min_values=0, max_values=25,
         options=[
             discord.SelectOption(label="Удаление сообщений", value="msg_delete", emoji="🗑️", description="Удалённые сообщения"),
             discord.SelectOption(label="Редактирование сообщений", value="msg_edit", emoji="✏️", description="Изменённые сообщения"),
@@ -524,15 +567,6 @@ class SetupLoggingView(discord.ui.View):
             discord.SelectOption(label="Треды", value="thread", emoji="🧵", description="Создание/удаление тредов"),
             discord.SelectOption(label="Настройки сервера", value="server_update", emoji="⚙️", description="Название, иконка, баннер..."),
             discord.SelectOption(label="Ивенты", value="events", emoji="📅", description="Scheduled events"),
-            discord.SelectOption(label="Бан", value="pun_ban", emoji="🔨", description="Участник забанен"),
-            discord.SelectOption(label="Разбан", value="pun_unban", emoji="✅", description="Участник разбанен"),
-            discord.SelectOption(label="Кик", value="pun_kick", emoji="👢", description="Участник кикнут"),
-            discord.SelectOption(label="Мут", value="pun_mute", emoji="🔇", description="Участник замьючен"),
-            discord.SelectOption(label="Снятие мута", value="pun_unmute", emoji="🔊", description="Мут снят"),
-            discord.SelectOption(label="Варн", value="pun_warn", emoji="⚠️", description="Выдано предупреждение"),
-            discord.SelectOption(label="Снятие варна", value="pun_unwarn", emoji="🗑️", description="Предупреждение снято"),
-            discord.SelectOption(label="Чёрный список", value="pun_blacklist", emoji="🚫", description="Участник внесён в ЧС"),
-            discord.SelectOption(label="Снятие с ЧС", value="pun_unblacklist", emoji="♻️", description="Участник снят с ЧС"),
             discord.SelectOption(label="Эмодзи и стикеры", value="emoji_sticker", emoji="😀", description="Добавление/удаление/изменение"),
             discord.SelectOption(label="Саундборд", value="soundboard", emoji="🔊", description="Звуки саундборда"),
             discord.SelectOption(label="Команды", value="commands", emoji="💻", description="Использование slash-команд"),
@@ -543,17 +577,66 @@ class SetupLoggingView(discord.ui.View):
     )
     async def select_events(self, interaction: discord.Interaction, select: discord.ui.Select):
         await interaction.response.defer()
-        all_events = ["msg_delete", "msg_edit", "member_join", "member_leave", "nickname", "role_add", "role_remove", "role_create", "role_delete", "role_update", "voice_connect", "voice_disconnect", "voice_move", "voice_state", "boost", "channel_create", "channel_delete", "thread", "server_update", "events", "pun_ban", "pun_unban", "pun_kick", "pun_mute", "pun_unmute", "pun_warn", "pun_unwarn", "pun_blacklist", "pun_unblacklist", "emoji_sticker", "soundboard", "commands", "avatar", "pins"]
-        log_events = {e: e in select.values for e in all_events}
+        events_subset = [
+            "msg_delete", "msg_edit", "member_join", "member_leave", "nickname",
+            "role_add", "role_remove", "role_create", "role_delete", "role_update",
+            "voice_connect", "voice_disconnect", "voice_move", "voice_state",
+            "boost", "channel_create", "channel_delete", "thread", "server_update",
+            "events", "emoji_sticker", "soundboard", "commands", "avatar", "pins",
+        ]
+        config = await self.db.get_guild_config(str(self.guild_id))
+        log_events = config.get("log_events", {})
+        for e in events_subset:
+            log_events[e] = e in select.values
         await self.db.update_config_field(str(self.guild_id), "log_events", log_events)
-        enabled = [e for e in select.values]
-        disabled = [e for e in all_events if e not in enabled]
-        text = f"✅ Логируются: {', '.join(enabled) if enabled else 'ничего'}"
-        if disabled:
-            text += f"\n❌ Не логируются: {', '.join(disabled)}"
-        await interaction.followup.send(text, ephemeral=True)
+        await log_settings_change(
+            interaction, "Логирование",
+            f"**Действие:** изменён список основных событий лога\n**Включено:** {len(select.values)}/{len(events_subset)}"
+        )
+        await interaction.followup.send(
+            f"✅ Основные события: {len(select.values)}/{len(events_subset)} включено",
+            ephemeral=True
+        )
 
-    @discord.ui.button(label="Тест лога", emoji="🧪", style=discord.ButtonStyle.green, row=2)
+    @discord.ui.select(
+        cls=discord.ui.Select,
+        placeholder="⚖️ Наказания и настройки",
+        min_values=0, max_values=10,
+        options=[
+            discord.SelectOption(label="Бан", value="pun_ban", emoji="🔨", description="Участник забанен"),
+            discord.SelectOption(label="Разбан", value="pun_unban", emoji="✅", description="Участник разбанен"),
+            discord.SelectOption(label="Кик", value="pun_kick", emoji="👢", description="Участник кикнут"),
+            discord.SelectOption(label="Мут", value="pun_mute", emoji="🔇", description="Участник замьючен"),
+            discord.SelectOption(label="Снятие мута", value="pun_unmute", emoji="🔊", description="Мут снят"),
+            discord.SelectOption(label="Варн", value="pun_warn", emoji="⚠️", description="Выдано предупреждение"),
+            discord.SelectOption(label="Снятие варна", value="pun_unwarn", emoji="🗑️", description="Предупреждение снято"),
+            discord.SelectOption(label="Чёрный список", value="pun_blacklist", emoji="🚫", description="Участник внесён в ЧС"),
+            discord.SelectOption(label="Снятие с ЧС", value="pun_unblacklist", emoji="♻️", description="Участник снят с ЧС"),
+            discord.SelectOption(label="Настройки", value="settings", emoji="⚙️", description="Изменения настроек и прав"),
+        ],
+        row=2
+    )
+    async def select_events_punish(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        events_subset = [
+            "pun_ban", "pun_unban", "pun_kick", "pun_mute", "pun_unmute",
+            "pun_warn", "pun_unwarn", "pun_blacklist", "pun_unblacklist", "settings",
+        ]
+        config = await self.db.get_guild_config(str(self.guild_id))
+        log_events = config.get("log_events", {})
+        for e in events_subset:
+            log_events[e] = e in select.values
+        await self.db.update_config_field(str(self.guild_id), "log_events", log_events)
+        await log_settings_change(
+            interaction, "Логирование",
+            f"**Действие:** изменён список событий наказаний/настроек\n**Включено:** {len(select.values)}/{len(events_subset)}"
+        )
+        await interaction.followup.send(
+            f"✅ Наказания/настройки: {len(select.values)}/{len(events_subset)} включено",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Тест лога", emoji="🧪", style=discord.ButtonStyle.green, row=3)
     async def btn_test_log(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
         log_ch = config.get("log_channel_id")
@@ -1072,7 +1155,7 @@ class ReactionAddModal(discord.ui.Modal):
                 "Используйте:\n"
                 "• Юникод-эмодзи: ❤️🔥👍⑥⑦\n"
                 "• Кастомные: перетащите эмодзи из сервера (получите `<:name:id>`)\n\n"
-                "⚠️ `:six:` — это не эмодзи! Используйте真正的 эмодзи.",
+                "⚠️ `:six:` — это не эмодзи! Используйте настоящие эмодзи.",
                 ephemeral=True
             )
 
@@ -1713,6 +1796,10 @@ class SetupPrivateCommandsView(discord.ui.View):
             private[cmd] = role_ids
 
         await self.db.update_config_field(str(self.guild_id), "private_commands", private)
+        await log_settings_change(
+            interaction, "Приватные команды",
+            f"**Действие:** доступ к командам ограничен ролями\n**Команды:** {', '.join(f'`{c}`' for c in self.selected_commands[:10])}\n**Роли:** {', '.join([r.mention for r in select.values])}"
+        )
         await interaction.followup.send(
             f"✅ Команды `{', '.join(self.selected_commands[:5])}` теперь видны только для: {', '.join([r.mention for r in select.values])}",
             ephemeral=True
@@ -1731,6 +1818,10 @@ class SetupPrivateCommandsView(discord.ui.View):
             private.pop(cmd, None)
 
         await self.db.update_config_field(str(self.guild_id), "private_commands", private)
+        await log_settings_change(
+            interaction, "Приватные команды",
+            f"**Действие:** команды снова публичные\n**Команды:** {', '.join(f'`{c}`' for c in self.selected_commands[:10])}"
+        )
         await interaction.followup.send(f"✅ Команды `{', '.join(self.selected_commands[:5])}` снова публичные!", ephemeral=True)
 
 
@@ -1799,6 +1890,12 @@ class QuestAddModal(discord.ui.Modal):
             self.name_input.value, self.name_input.value,
             quest_type, target, reward
         )
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** создан квест\n**Квест:** **{self.name_input.value}**\n**ID:** `{self.quest_id_input.value.strip()}`\n**Тип:** `{quest_type}` | **Цель:** `{target}` | **Награда:** `{reward}`"
+        )
+        if interaction.guild:
+            interaction.client.dispatch("quests_changed", interaction.guild.id)
         await interaction.followup.send(f"✅ Квест **{self.name_input.value}** создан!", ephemeral=True)
 
         if self.bot:
@@ -1841,8 +1938,15 @@ class QuestDeleteModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        await self.db.delete_quest(str(self.guild_id), self.quest_id_input.value.strip())
-        await interaction.followup.send(f"✅ Квест `{self.quest_id_input.value}` удалён!", ephemeral=True)
+        quest_id = self.quest_id_input.value.strip()
+        await self.db.delete_quest(str(self.guild_id), quest_id)
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** удалён квест\n**ID:** `{quest_id}`"
+        )
+        if interaction.guild:
+            interaction.client.dispatch("quests_changed", interaction.guild.id)
+        await interaction.followup.send(f"✅ Квест `{quest_id}` удалён!", ephemeral=True)
 
 
 class RandomQuestAddModal(discord.ui.Modal):
@@ -1882,6 +1986,12 @@ class RandomQuestAddModal(discord.ui.Modal):
             str(self.guild_id), pool_id, self.name_input.value,
             f"Рандомный квест: {self.name_input.value}", quest_type, target, reward, weight
         )
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** добавлен шаблон в пул рандомных\n**Квест:** **{self.name_input.value}**\n**ID:** `{pool_id}`"
+        )
+        if interaction.guild:
+            interaction.client.dispatch("quests_changed", interaction.guild.id)
         await interaction.followup.send(f"✅ Квест **{self.name_input.value}** добавлен в пул!", ephemeral=True)
 
 
@@ -1896,8 +2006,15 @@ class RandomQuestRemoveModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        await self.db.remove_random_quest(str(self.guild_id), self.pool_id_input.value.strip())
-        await interaction.followup.send(f"✅ Квест `{self.pool_id_input.value}` удалён из пула!", ephemeral=True)
+        pool_id = self.pool_id_input.value.strip()
+        await self.db.remove_random_quest(str(self.guild_id), pool_id)
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** удалён шаблон из пула рандомных\n**ID:** `{pool_id}`"
+        )
+        if interaction.guild:
+            interaction.client.dispatch("quests_changed", interaction.guild.id)
+        await interaction.followup.send(f"✅ Квест `{pool_id}` удалён из пула!", ephemeral=True)
 
 
 class RandomQuestConfigModal(discord.ui.Modal):
@@ -1927,6 +2044,10 @@ class RandomQuestConfigModal(discord.ui.Modal):
         if updates:
             await self.db.update_random_quest_config(str(self.guild_id), **updates)
         config = await self.db.get_random_quest_config(str(self.guild_id))
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** изменены настройки рандомных квестов\n**Количество:** `{config['count']}` | **Интервал:** `{config['interval_hours']}ч`"
+        )
         await interaction.followup.send(
             f"✅ Настройки: количество **{config['count']}**, интервал **{config['interval_hours']}ч**",
             ephemeral=True
@@ -1981,7 +2102,8 @@ class SetupQuestsView(discord.ui.View):
             "🔔 Уведомления — канал и вкл/выкл уведомлений о квестах (канал ниже)",
             "🧹 Очистить данные — сброс прогресса/активности/уровней/балансов",
             "",
-            "`/questdesk` — доска квестов командой, доступна администраторам",
+            "В канале уведомлений бот автоматически поддерживает актуальную доску квестов:",
+            "она обновляется при добавлении/удалении квестов, ротации пула и ежедневном сбросе.",
             "",
             "*Уведомления о квестах отправляются в выбранный канал (по умолчанию — системный).*",
         ]
@@ -2075,6 +2197,12 @@ class SetupQuestsView(discord.ui.View):
     async def select_notif_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         await interaction.response.defer(ephemeral=True)
         await self.db.update_config_field(str(self.guild_id), "quest_notif_channel_id", select.values[0].id)
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** изменён канал уведомлений о квестах\n**Канал:** {select.values[0].mention}"
+        )
+        if interaction.guild:
+            interaction.client.dispatch("quests_changed", interaction.guild.id)
         await interaction.followup.send(f"✅ Канал уведомлений о квестах: {select.values[0].mention}", ephemeral=True)
 
     @discord.ui.button(label="Ротация", emoji="🔄", style=discord.ButtonStyle.blurple, row=3)
@@ -2083,6 +2211,12 @@ class SetupQuestsView(discord.ui.View):
         rotated = await self.db.rotate_random_quests(str(self.guild_id))
         if rotated:
             names = ", ".join(rotated)
+            await log_settings_change(
+                interaction, "Квесты",
+                f"**Действие:** ручная ротация рандомных квестов\n**Новые квесты:** {names}"
+            )
+            if interaction.guild:
+                interaction.client.dispatch("quests_changed", interaction.guild.id)
             await interaction.followup.send(f"✅ Ротация завершена! Новые квесты: **{names}**", ephemeral=True)
         else:
             await interaction.followup.send("⚠️ Нет квестов в пуле для ротации.", ephemeral=True)
@@ -2100,6 +2234,10 @@ class SetupQuestsView(discord.ui.View):
         new_state = not currently
         button.label = "Уведомления: Выкл" if not new_state else "Уведомления: Вкл"
         button.style = discord.ButtonStyle.danger if not new_state else discord.ButtonStyle.success
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** {'включены' if new_state else 'выключены'} уведомления о квестах"
+        )
         notif_ch_id = config.get("quest_notif_channel_id") or config.get("system_channel_id")
         channel_text = f"<#{notif_ch_id}>" if notif_ch_id else "❌ не задан (используйте селект выше)"
         embed = discord.Embed(
@@ -2112,7 +2250,7 @@ class SetupQuestsView(discord.ui.View):
 
     @discord.ui.button(label="Очистить данные", emoji="🧹", style=discord.ButtonStyle.danger, row=3)
     async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = QuestClearView(self.db, self.guild_id)
+        view = QuestClearView(self.db, self.guild_id, self.cog.bot)
         await view.build_select()
         await interaction.response.send_message(
             "🧹 **Очистка данных**\nВыберите, какие данные нужно очистить:",
@@ -2121,10 +2259,11 @@ class SetupQuestsView(discord.ui.View):
 
 
 class QuestClearView(discord.ui.View):
-    def __init__(self, db: Database, guild_id: int):
+    def __init__(self, db: Database, guild_id: int, bot=None):
         super().__init__(timeout=120)
         self.db = db
         self.guild_id = guild_id
+        self.bot = bot
 
     async def build_select(self):
         options = [
@@ -2182,6 +2321,13 @@ class QuestClearView(discord.ui.View):
             msg = f"✅ Прогресс квеста `{quest_id}` сброшен."
         else:
             msg = "❌ Неизвестная операция."
+
+        await log_settings_change(
+            interaction, "Квесты",
+            f"**Действие:** очистка данных\n**Операция:** `{value}`"
+        )
+        if interaction.guild:
+            interaction.client.dispatch("quests_changed", interaction.guild.id)
 
         for item in self.children:
             if isinstance(item, discord.ui.Select):

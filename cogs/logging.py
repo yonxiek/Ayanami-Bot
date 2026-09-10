@@ -625,8 +625,8 @@ class Logging(commands.Cog):
             changes.append(f"**Require 2FA**: {'Yes' if after.mfa_level else 'No'}")
         if before.premium_tier != after.premium_tier:
             changes.append(f"**Boost Tier**: `{before.premium_tier}` → `{after.premium_tier}`")
-        if before.premium_subscript_count != after.premium_subscript_count:
-            changes.append(f"**Boost Count**: `{before.premium_subscript_count}` → `{after.premium_subscript_count}`")
+        if before.premium_subscription_count != after.premium_subscription_count:
+            changes.append(f"**Boost Count**: `{before.premium_subscription_count}` → `{after.premium_subscription_count}`")
         if not changes:
             return
         actor = await self.get_audit_actor(after, discord.AuditLogAction.guild_update, after.id)
@@ -637,6 +637,25 @@ class Logging(commands.Cog):
         embed.add_field(name="Changes", value="\n".join(changes), inline=False)
         embed.set_footer(text=self._actor_footer("Changed By", actor))
         await self.send_log(after.id, embed)
+
+    @commands.Cog.listener()
+    async def on_settings_log(self, guild, actor, title, details):
+        if not guild:
+            return
+        if not await self.is_event_enabled(guild.id, "settings"):
+            return
+        embed = discord.Embed(
+            title=f"⚙️ {title}",
+            description=details,
+            color=discord.Color.dark_blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        if actor:
+            embed.add_field(name="Кто изменил", value=f"{actor.mention} `{actor.name}` (`{actor.id}`)", inline=False)
+        embed.set_footer(text="Ayanami System")
+        await self.send_log(guild.id, embed)
 
     # ==========================================
     #               THREADS

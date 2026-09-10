@@ -76,6 +76,16 @@ class PermsDashboard(discord.ui.LayoutView):
         for cmd in set(cmds_to_modify):
             if action == "clear": await self.cog.clear_rule_db(interaction.guild.id, cmd)
             else: await self.cog.modify_rule_db(interaction.guild.id, cmd, role_id, action)
+        if interaction.guild:
+            action_map = {"allow": "Разрешить", "deny": "Запретить", "clear": "Сбросить правила"}
+            action_name = action_map.get(action, action)
+            role_txt = f"<@&{role_id}>" if role_id and action != "clear" else "—"
+            cmd_list = ", ".join(f"`{c}`" for c in list(set(cmds_to_modify))[:15])
+            interaction.client.dispatch(
+                "settings_log", interaction.guild, interaction.user,
+                "Права команд",
+                f"**Действие:** {action_name}\n**Роль:** {role_txt}\n**Команды:** {cmd_list}"
+            )
         await self.update_message(interaction)
 
     async def allow_callback(self, interaction: discord.Interaction):
