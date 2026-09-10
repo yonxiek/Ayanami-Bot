@@ -9,7 +9,6 @@ import json
 from aiohttp import web
 from datetime import datetime, timezone
 from discord.ext import commands
-from discord import app_commands
 from db import Database
 from ui_components import Colors
 import config
@@ -102,20 +101,6 @@ class DashboardPages(commands.Cog):
             count_row = await cnt_cursor.fetchone()
             tables[name] = count_row[0]
         return web.json_response(tables)
-
-    # Никаких slash-команд, вопрос открыт на будущее.
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="dashboard_start")
-    @commands.is_owner()
-    async def dashboard_start(self, ctx):
-        if config.DASHBOARD_SECRET:
-            await ctx.send(f"📊 Дашборд уже запущен, если был включён.")
-        else:
-            await ctx.send("❌ DASHBOARD_SECRET не задан в .env.")
-
 
 async def setup(bot):
     bot.started_at = datetime.now(timezone.utc)

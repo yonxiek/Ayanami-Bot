@@ -40,28 +40,29 @@ class HelpCog(commands.Cog):
         "Economy": ("💰 Экономика", "Профили и баллы"),
         "Utils": ("🛠️ Утилиты", "Полезные команды"),
         "Dashboard": ("⚙️ Настройки", "Управление ботом"),
-        "Permissions": ("🔒 Права", "Управление доступом"),
-        "Logging": ("📋 Логирование", "Журнал событий"),
-        "Greetings": ("👋 Приветствия", "Привет/Прощание/Буст"),
-        "VoiceRooms": ("🔊 Приватки", "Голосовые комнаты"),
-        "Security": ("🚨 Безопасность", "Anti-Nuke защита"),
         "MiniGames": ("🎮 Мини-игры", "Факты, угадай число, КНБ"),
-        "Responses": ("💬 Ответы бота", "Авто-ответы на слова"),
         "Shop": ("🛒 Магазин", "Покупка товаров"),
-        "Levels": ("📊 Уровни", "Опыт и роли"),
         "Quests": ("📜 Квесты", "Задания и награды"),
         "Achievements": ("🏆 Достижения", "Список наград за активность"),
         "Reminders": ("⏰ Напоминания", "Личные напоминания"),
         "Duels": ("⚔️ Дуэли", "Сражения с другими игроками"),
         "WeeklyStats": ("📈 Статистика", "Топы за неделю"),
-        "Chat": ("🗣️ Чат с ИИ", "Общение с ботом через Gemini"),
+        "AIImageGeneration": ("🤖 ИИ", "Генерация изображений, меню ИИ"),
+        "Clans": ("⚔️ Кланы", "Создание и управление кланами"),
+        "Collectibles": ("🃏 Карточки", "Коллекционные карточки"),
+        "GitHubIntegration": ("🐙 GitHub", "Коммиты, PR, Issues"),
+        "Music": ("🎵 Музыка", "Воспроизведение музыки"),
+        "Polls": ("🗳️ Голосования", "Создание голосований"),
+        "ServerEvents": ("🎉 События", "Создание событий"),
+        "AIModeration": ("🛡️ ИИ-модерация", "Авто-проверка сообщений"),
+        "Tickets": ("📩 Тикеты", "Система обращений в поддержку"),
     }
 
     def _gather_commands(self, config, private_cmds, user_role_ids, is_admin) -> list[tuple[str, str]]:
         """Возвращает список [(раздел, текст_команд)] для видимых пользователю когов."""
         sections = []
         for cog_name, cog in self.bot.cogs.items():
-            if cog_name in ["HelpCog", "ErrorHandler", "SlashSync", "Security", "StatusCog", "Voice"]:
+            if cog_name in ["HelpCog", "Security"]:
                 continue
             slash_cmds = [cmd for cmd in cog.walk_app_commands() if isinstance(cmd, app_commands.Command)]
             if not slash_cmds:

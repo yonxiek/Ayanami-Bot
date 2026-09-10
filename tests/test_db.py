@@ -77,6 +77,52 @@ async def test_sell_card_more_than_owned(db):
     assert await db.count_unique_cards("111", "222") == 1
 
 
+async def test_buy_same_card_stacks_quantity(db):
+    await db.update_user_balance("111", "222", 1000)
+    await db.conn.execute(
+        "INSERT INTO collectible_cards (guild_id, card_id, name, description, rarity, emoji, drop_rate, enabled) "
+        "VALUES ('111', 'c1', 'Тест', '', 'rare', '🔵', 0.1, 1)")
+    await db.conn.commit()
+
+    assert await db.buy_card("111", "222", "c1", 100) is True
+    assert await db.buy_card("111", "222", "c1", 100) is True
+    assert await db.buy_card("111", "222", "c1", 100) is True
+
+    assert await db.count_unique_cards("111", "222") == 1
+    cursor = await db.conn.execute(
+        "SELECT quantity FROM user_cards WHERE guild_id = '111' AND user_id = '222' AND card_id = 'c1'")
+    row = await cursor.fetchone()
+    assert row["quantity"] == 3
+
+
+async def test_sell_part_of_stacked_cards(db):
+    await db.conn.execute(
+        "INSERT INTO collectible_cards (guild_id, card_id, name, description, rarity, emoji, drop_rate, enabled) "
+        "VALUES ('111', 'c1', 'Тест', '', 'rare', '🔵', 0.1, 1)")
+    await db.conn.execute(
+        "INSERT INTO user_cards (guild_id, user_id, card_id, quantity, obtained_at) "
+        "VALUES ('111', '222', 'c1', 3, ?)",
+        (datetime.now(timezone.utc).isoformat(),))
+    await db.conn.commit()
+
+    earned = await db.sell_card("111", "222", "c1", 2, 150)
+    assert earned == 300
+    assert await db.count_unique_cards("111", "222") == 1
+    cursor = await db.conn.execute(
+        "SELECT quantity FROM user_cards WHERE guild_id = '111' AND user_id = '222' AND card_id = 'c1'")
+    row = await cursor.fetchone()
+    assert row["quantity"] == 1
+
+
+async def test_get_user_achievements(db):
+    assert await db.award_achievement("111", "222", "first_ticket") is True
+    assert await db.award_achievement("111", "222", "tickets_5") is True
+    achievements = await db.get_user_achievements("111", "222")
+    ids = [a["achievement_id"] for a in achievements]
+    assert ids == ["first_ticket", "tickets_5"]
+    assert await db.count_achievements("111", "222") == 2
+
+
 async def test_award_achievement_once(db):
     first = await db.award_achievement("111", "222", "first_ticket")
     second = await db.award_achievement("111", "222", "first_ticket")
