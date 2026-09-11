@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import discord
-import asyncio
 import re
-from discord.ext import commands
+
+import discord
 from discord import app_commands
+from discord.ext import commands
+
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
@@ -61,7 +62,7 @@ class Music(commands.Cog):
         if not WAVELINK_AVAILABLE:
             print("🎵 wavelink не установлен — музыка отключена (pip install wavelink)")
             return
-        from config import LAVALINK_HOST, LAVALINK_PORT, LAVALINK_PASSWORD
+        from config import LAVALINK_HOST, LAVALINK_PASSWORD, LAVALINK_PORT
         if not LAVALINK_HOST:
             return
 

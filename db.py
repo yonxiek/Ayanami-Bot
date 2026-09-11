@@ -1,14 +1,15 @@
-import aiosqlite
 import json
 from datetime import datetime, timezone
-from typing import Optional, Dict
+
+import aiosqlite
+
 
 class Database:
     _instance = None
 
     def __new__(cls, db_path="data/bot.db"):
         if not cls._instance:
-            cls._instance = super(Database, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance.db_path = db_path
             cls._instance.conn = None
         return cls._instance
@@ -435,7 +436,7 @@ class Database:
         ''', (guild_id, moderator_id, action_type, amount, amount))
         await self.conn.commit()
 
-    async def get_mod_stats(self, guild_id: str, moderator_id: str) -> Dict[str, int]:
+    async def get_mod_stats(self, guild_id: str, moderator_id: str) -> dict[str, int]:
         try:
             cursor = await self.conn.execute('SELECT action_type, count FROM mod_stats WHERE guild_id = ? AND moderator_id = ?', (guild_id, moderator_id))
             rows = await cursor.fetchall()
@@ -499,6 +500,16 @@ class Database:
             (guild_id, user_id)
         )
         await self.conn.commit()
+
+    async def deactivate_expired_warnings(self) -> int:
+        """Деактивирует просроченные security_warnings. Возвращает количество обработанных записей."""
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'UPDATE security_warnings SET active = 0 WHERE active = 1 AND expires_at <= ?',
+            (now,)
+        )
+        await self.conn.commit()
+        return cursor.rowcount
 
     # ==========================================
     #     DAILY QUESTS
@@ -1038,7 +1049,7 @@ class Database:
         return [dict(row) for row in await cursor.fetchall()]
 
     async def clear_expired_reminders(self, keep_days: int = 7):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
         await self.conn.execute(
             'DELETE FROM reminders WHERE done = 1 AND remind_at < ?',
@@ -1145,9 +1156,8 @@ class Database:
         return [dict(row) for row in await cursor.fetchall()]
 
     async def prune_weekly_stats(self, keep_weeks: int = 4):
-        from datetime import datetime, timedelta
+        from datetime import datetime
         iso = datetime.now().isocalendar()
-        current_week = f"{iso[0]}-W{iso[1]:02d}"
         cursor = await self.conn.execute('SELECT DISTINCT week_key FROM weekly_stats')
         for row in await cursor.fetchall():
             key = row['week_key']
@@ -1182,7 +1192,7 @@ class Database:
         row = await cursor.fetchone()
         return row['cnt'] if row else 0
 
-    async def get_card(self, guild_id: str, card_id: str) -> Optional[dict]:
+    async def get_card(self, guild_id: str, card_id: str) -> dict | None:
         cursor = await self.conn.execute(
             'SELECT card_id, name, description, rarity, emoji, drop_rate FROM collectible_cards '
             'WHERE guild_id = ? AND card_id = ? AND enabled = 1', (guild_id, card_id))
@@ -1219,7 +1229,7 @@ class Database:
         await self.conn.execute(
             'DELETE FROM user_cards WHERE guild_id = ? AND user_id = ? AND card_id = ? AND quantity <= 0',
             (guild_id, user_id, card_id))
-        user = await self.get_or_create_user(guild_id, user_id)
+        await self.get_or_create_user(guild_id, user_id)
         await self.conn.execute(
             'UPDATE users SET balance = balance + ? WHERE guild_id = ? AND user_id = ?',
             (price * amount, guild_id, user_id))

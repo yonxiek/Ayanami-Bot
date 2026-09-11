@@ -1,11 +1,11 @@
-import discord
 import random
+
 import aiohttp
-from discord.ext import commands
+import discord
 from discord import app_commands
+from discord.ext import commands
+
 from db import Database
-
-
 
 RPS_CHOICES = {
     "rock": {"emoji": "🪨", "name": "Камень"},
@@ -120,17 +120,9 @@ class GuessModal(discord.ui.Modal, title="Угадай число"):
                 DO UPDATE SET wins = wins + 1, total = total + 1
             ''', (str(interaction.guild.id), str(interaction.user.id)))
             await db.conn.commit()
-            history = " → ".join(str(g) for g in self.game_view.guesses)
-            embed = discord.Embed(
-                title="🎯 Угадал!",
-                description=f"**Число:** {self.game_view.answer}\n**Попыток:** {self.game_view.attempts}\n**Попытки:** {history}",
-                color=discord.Color.green(),
-            )
             self.game_view.stop()
-            await interaction.response.edit_message(view=view)
+            await interaction.response.edit_message(view=self.game_view)
         else:
-            hint = "Больше ⬆️" if guess < self.game_view.answer else "Меньше ⬇️"
-            history = " → ".join(str(g) for g in self.game_view.guesses)
             if self.game_view.attempts >= 10:
                 await db.conn.execute('''
                     INSERT INTO game_scores (guild_id, user_id, wins, total)
@@ -139,19 +131,9 @@ class GuessModal(discord.ui.Modal, title="Угадай число"):
                     DO UPDATE SET total = total + 1
                 ''', (str(interaction.guild.id), str(interaction.user.id)))
                 await db.conn.commit()
-                embed = discord.Embed(
-                    title="💀 Проиграл!",
-                    description=f"**Число было:** {self.game_view.answer}\n**Попытки:** {history}",
-                    color=discord.Color.red(),
-                )
                 self.game_view.stop()
-                await interaction.response.edit_message(view=view)
+                await interaction.response.edit_message(view=self.game_view)
             else:
-                embed = discord.Embed(
-                    title=hint,
-                    description=f"Попытка {self.game_view.attempts}/10\n**Попытки:** {history}",
-                    color=discord.Color(0xf39c12),
-                )
                 await interaction.response.edit_message(view=self.game_view)
 
 

@@ -1,9 +1,10 @@
-import time
 import random
+import time
+
 import discord
 from discord.ext import commands
-from db import Database
 
+from db import Database
 
 DEFAULT_RESPONSES = {
     "спс": ["Всегда пожалуйста! 😊", "Не за что! 😊"],

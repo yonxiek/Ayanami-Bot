@@ -1,12 +1,13 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-from ui_components import AyanamiUI, Icons, Colors
-from db import Database
-import config
-from datetime import datetime
-import aiohttp
 import json as _json
+from datetime import datetime, timezone
+
+import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from db import Database
+from ui_components import AyanamiUI, Colors
 
 
 async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
@@ -227,7 +228,7 @@ class SetupAdminView(discord.ui.View):
         disabled = [mod_names.get(m, m) for m, v in modules.items() if not v]
 
         lines = [
-            f"### Основные настройки",
+            "### Основные настройки",
             f"**Префикс:** `{config.get('prefix', '!')}`",
             f"**Админ-роли:** {role_list(admin_roles)}",
             f"**Роли персонала:** {role_list(staff_roles)}",
@@ -496,7 +497,7 @@ class CooldownSettingsView(discord.ui.View):
             r = interaction.guild.get_role(int(rid))
             parts.append(r.mention if r else f"`{rid}`")
         lines = [
-            f"### Командный кулдаун",
+            "### Командный кулдаун",
             f"**Длительность:** {'выключен' if not seconds else f'{seconds} с'}",
             f"**Роли без кулдауна:** {', '.join(parts) if parts else 'не заданы'}",
             "",
@@ -595,7 +596,13 @@ class SetupChatView(discord.ui.View):
 
     @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from config import GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, DEEPSEEK_API_KEY, AI_PROVIDER
+        from config import (
+            AI_PROVIDER,
+            DEEPSEEK_API_KEY,
+            GEMINI_API_KEY,
+            GEMINI_MODEL,
+            OPENAI_API_KEY,
+        )
         guild_cfg = await self.db.get_guild_config(str(self.guild_id))
         enabled = guild_cfg.get("chat_enabled", False)
         ch = guild_cfg.get("chat_channel_id")
@@ -611,7 +618,7 @@ class SetupChatView(discord.ui.View):
         }
 
         lines = [
-            f"### Чат с ИИ",
+            "### Чат с ИИ",
             f"**Статус:** {'🟢 Включён' if enabled else '🔴 Выключен'}",
             f"**Канал:** {f'<#{ch}>' if ch else 'любой (по упоминанию бота)'}",
             f"**Кулдаун:** {cooldown} с",
@@ -649,7 +656,7 @@ class SetupRaidView(discord.ui.View):
         ping_role = interaction.guild.get_role(int(ping_role_id)) if ping_role_id else None
 
         lines = [
-            f"### Рейды",
+            "### Рейды",
             f"**Роль для пинга:** {ping_role.mention if ping_role else 'Не задана'}",
             f"**Канал для лайнов:** {f'<#{line_ch_id}>' if line_ch_id else 'Не задан'}",
             "\n*Выберите роль и канал, затем нажмите «Сохранить».*",
@@ -741,7 +748,7 @@ class SetupLoggingView(discord.ui.View):
         disabled = [event_names.get(k, k) for k, v in log_events.items() if not v]
 
         lines = [
-            f"### Логирование",
+            "### Логирование",
             f"**Канал:** {f'<#{log_ch}>' if log_ch else '❌ Не настроен'}",
             f"**Включено ({len(enabled)}):** {', '.join(enabled) if enabled else 'никакие'}",
         ]
@@ -1015,7 +1022,7 @@ class SetupRolesView(discord.ui.View):
         im_role = interaction.guild.get_role(int(im_id)) if im_id else None
 
         lines = [
-            f"### Роли",
+            "### Роли",
             f"**Чёрный список:** {bl_role.mention if bl_role else 'Не задана'}",
             f"**Иммунитет:** {im_role.mention if im_role else 'Не задана'}",
             "\n*Выберите роли в меню ниже. Участники с ролью иммунитета защищены от наказаний.*",
@@ -1076,7 +1083,7 @@ class SetupGreetingsView(discord.ui.View):
         ar_text = ", ".join([interaction.guild.get_role(int(r)).mention if interaction.guild.get_role(int(r)) else str(r) for r in ar_roles[:5]]) if ar_roles else "Не заданы"
 
         lines = [
-            f"### Приветствия",
+            "### Приветствия",
             f"{welcome} **Приветствия:** {ch(w_ch)}",
             f"{leave} **Прощания:** {ch(l_ch)}",
             f"{boost} **Бусты:** {ch(b_ch)}",
@@ -1479,7 +1486,6 @@ class ReactionRoleAddModal(discord.ui.Modal, title="Добавить Reaction Ro
         self.guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        import re
         try:
             msg_id = int(self.message_id.value)
             ch_id = int(self.channel_id.value)
@@ -1564,7 +1570,7 @@ class SetupReactionRolesView(discord.ui.View):
         rr = config.get("reaction_roles", {})
         total = sum(len(v) for v in rr.values())
         lines = [
-            f"### Reaction Roles — справка",
+            "### Reaction Roles — справка",
             f"**Привязок:** {total} в {len(rr)} сообщениях",
             "",
             "**Как использовать:**",
@@ -1630,7 +1636,7 @@ class SetupChannelsView(discord.ui.View):
         sr_text = ", ".join([interaction.guild.get_role(int(r)).mention if interaction.guild.get_role(int(r)) else str(r) for r in staff_roles[:5]]) if staff_roles else "Не заданы"
 
         lines = [
-            f"### Каналы и Роли",
+            "### Каналы и Роли",
             f"**Жалобы:** {ch(config.get('report_channel_id'))}",
             f"**Лог повышений:** {ch(config.get('promote_log_channel_id'))}",
             f"**Лог понижений:** {ch(config.get('demote_log_channel_id'))}",
@@ -1663,7 +1669,7 @@ class SetupChannelsView(discord.ui.View):
     async def select_staff_roles(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
         await interaction.response.defer()
         await self.db.update_config_field(str(self.guild_id), "staff_roles", [r.id for r in select.values])
-        await interaction.followup.send(f"✅ Роли персонала сохранены!", ephemeral=True)
+        await interaction.followup.send("✅ Роли персонала сохранены!", ephemeral=True)
 
 
 # ==========================================
@@ -1692,7 +1698,7 @@ class SetupVoiceRoomsView(discord.ui.View):
             return f"<#{id}>" if id else "Не задан"
 
         lines = [
-            f"### Приватные голосовые",
+            "### Приватные голосовые",
             f"**Тип комнаты:** {type_names.get(room_type, room_type)}",
             f"**Триггер-канал:** {ch(trigger)}",
             f"**Категория:** {ch(category)}",
@@ -1834,7 +1840,7 @@ class SetupSecurityView(discord.ui.View):
         expiry = sec.get("warn_expiry_hours", 24)
 
         lines = [
-            f"### Безопасность (Anti-Nuke)",
+            "### Безопасность (Anti-Nuke)",
             f"**Статус:** {enabled}",
             f"**Наказание:** {p_names.get(punishment, punishment)}",
             f"**Порог варнов:** {warn_limit}",
@@ -1957,7 +1963,7 @@ class SetupPrivateCommandsView(discord.ui.View):
         hidden_count = len(private)
 
         lines = [
-            f"### Приватные команды — справка",
+            "### Приватные команды — справка",
             f"**Скрыто команд:** {hidden_count}",
             "",
             "**Как использовать:**",
@@ -2274,7 +2280,7 @@ class SetupQuestsView(discord.ui.View):
         config = await self.db.get_random_quest_config(str(self.guild_id))
 
         lines = [
-            f"### Квесты — справка",
+            "### Квесты — справка",
             f"**Активных квестов:** {len(quests)}",
             f"**Пул рандомных:** {len(pool)} (выборка {config['count']}, интервал {config['interval_hours']}ч)",
             "",
@@ -2612,7 +2618,7 @@ class SetupShopView(discord.ui.View):
     async def btn_help(self, interaction: discord.Interaction, button: discord.ui.Button):
         items = await self.db.get_shop_items(str(self.guild_id))
         lines = [
-            f"### Магазин — справка",
+            "### Магазин — справка",
             f"**Товаров:** {len(items)}",
             "",
             "**Как использовать:**",
@@ -2736,7 +2742,7 @@ class SetupTitlesView(discord.ui.View):
     @discord.ui.button(label="Справка", emoji="❓", style=discord.ButtonStyle.grey, row=1)
     async def btn_help(self, interaction: discord.Interaction, button: discord.ui.Button):
         lines = [
-            f"### Титулы — справка",
+            "### Титулы — справка",
             "",
             "**Как использовать:**",
             "🏷️ **Выдать титул** — введите ID участника и название титула",
@@ -2887,7 +2893,6 @@ class SetupLevelsView(discord.ui.View):
         roles_enabled = "🟢" if config.get("role_rewards_enabled", True) else "🔴"
         xp_per_msg = config.get("xp_per_message", 15)
         cooldown = config.get("xp_cooldown_seconds", 60)
-        boost = int(config.get("booster_xp_boost", 0) * 100)
 
         roles = await self.db.get_level_roles(str(self.guild_id))
         roles_text = ""
@@ -2899,7 +2904,7 @@ class SetupLevelsView(discord.ui.View):
             roles_text += f"  ...и ещё {len(roles)-5}\n"
 
         lines = [
-            f"### Уровни",
+            "### Уровни",
             f"{xp_enabled} **XP:** {xp_per_msg}/сообщение, кулдаун {cooldown}с",
             f"{notif_enabled} **Уведомления:** {ch(config.get('level_up_channel_id'))}",
             f"{roles_enabled} **Роли за уровни:**",
@@ -3060,7 +3065,7 @@ class SetupAutomodView(discord.ui.View):
         enabled = [name for key, name in filters.items() if automod.get(key)]
 
         lines = [
-            f"### Авто-модерация",
+            "### Авто-модерация",
             f"**Действие:** {a_names.get(action, action)}",
             f"**Фильтры:** {', '.join(enabled) if enabled else 'никакие'}",
             f"**Спам:** {automod.get('spam_limit', 5)} сообщений/5сек",

@@ -1,8 +1,7 @@
 import discord
 from discord.ext import commands
-from db import Database
-from ui_components import Colors
 
+from db import Database
 
 
 class KickSelectView(discord.ui.View):
@@ -228,7 +227,7 @@ class VoiceRooms(commands.Cog):
     async def send_controls(self, voice_channel, owner):
         view = VoiceRoomManageView(self, voice_channel, owner)
         try:
-            msg = await voice_channel.send(embed=embed)
+            msg = await voice_channel.send(view=view)
             self.control_messages[voice_channel.id] = msg
             print(f"[VoiceRooms] Панель отправлена в {voice_channel.name} для {owner.name}")
         except Exception as e:

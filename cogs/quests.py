@@ -1,12 +1,12 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-from typing import Optional, Literal
-from datetime import datetime, timezone, timedelta
-from db import Database
-from ui_components import Icons, Colors, AyanamiUI
-from voice_tracker import VoiceTrackerMixin
+from datetime import datetime, timezone
 
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+from db import Database
+from ui_components import AyanamiUI, Colors
+from voice_tracker import VoiceTrackerMixin
 
 
 class Quests(VoiceTrackerMixin, commands.Cog):

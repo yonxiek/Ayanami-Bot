@@ -7,6 +7,7 @@
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Базовая директория проекта (родительская по отношению к этому файлу)

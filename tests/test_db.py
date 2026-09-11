@@ -155,6 +155,7 @@ async def test_count_tickets(db):
 async def test_reminders_schema_migration(tmp_path):
     """Старая БД (remind_time/message/completed) должна мигрировать при init_db."""
     import aiosqlite
+
     from db import Database
 
     old_path = str(tmp_path / "old.db")
@@ -183,6 +184,7 @@ async def test_reminders_schema_migration(tmp_path):
 async def test_reminders_old_rows_carried_over(tmp_path):
     """Завершённые старые напоминания должны получить done = 1."""
     import aiosqlite
+
     from db import Database
 
     old_path = str(tmp_path / "old2.db")
@@ -206,3 +208,13 @@ async def test_reminders_old_rows_carried_over(tmp_path):
     assert rows == []
     if db.conn:
         await db.conn.close()
+
+
+async def test_deactivate_expired_warnings(db):
+    await db.add_security_warning("111", "222", "прошлая", expires_in_hours=-1)
+    await db.add_security_warning("111", "222", "будущая", expires_in_hours=24)
+    assert await db.get_active_warnings("111", "222") == 1
+
+    deactivated = await db.deactivate_expired_warnings()
+    assert deactivated == 1
+    assert await db.get_active_warnings("111", "222") == 1

@@ -1,11 +1,11 @@
-import discord
-from discord.ext import commands
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from db import Database
-from ui_components import Colors, Icons
 
+import discord
+from discord.ext import commands, tasks
+
+from db import Database
 
 
 class Security(commands.Cog):
@@ -21,6 +21,21 @@ class Security(commands.Cog):
         self.role_assign_tracker = defaultdict(lambda: defaultdict(list))
         self.webhook_tracker = defaultdict(lambda: defaultdict(list))
         self.punished_users = defaultdict(lambda: defaultdict(float))
+
+    async def cog_load(self):
+        if not self._expire_warnings_loop.is_running():
+            self._expire_warnings_loop.start()
+
+    async def cog_unload(self):
+        if self._expire_warnings_loop.is_running():
+            self._expire_warnings_loop.cancel()
+
+    @tasks.loop(hours=1)
+    async def _expire_warnings_loop(self):
+        try:
+            await self.db.deactivate_expired_warnings()
+        except Exception:
+            pass
 
     async def get_config(self, guild_id: int) -> dict:
         config = await self.db.get_guild_config(str(guild_id))
@@ -100,7 +115,7 @@ class Security(commands.Cog):
             )
             for name, value in [("Участник", f"{user.mention} (`{user.id}`)")]:
                 embed.add_field(name=name, value=value, inline=False)
-            await self._send_log(guild, view)
+            await self._send_log(guild, embed=embed)
         except discord.Forbidden:
             pass
         except Exception:
@@ -113,7 +128,7 @@ class Security(commands.Cog):
     def _mark_punished(self, guild_id: int, user_id: int):
         self.punished_users[guild_id][user_id] = datetime.now(timezone.utc).timestamp()
 
-    async def _send_log(self, guild: discord.Guild, view: discord.ui.LayoutView):
+    async def _send_log(self, guild: discord.Guild, view: discord.ui.LayoutView = None, embed: discord.Embed = None):
         cfg = await self.get_config(guild.id)
         log_id = cfg.get("log_channel_id")
         if not log_id:
@@ -122,7 +137,10 @@ class Security(commands.Cog):
         if not channel:
             return
         try:
-            await channel.send(embed=embed)
+            if embed is not None:
+                await channel.send(embed=embed)
+            else:
+                await channel.send(view=view)
         except Exception:
             pass
 

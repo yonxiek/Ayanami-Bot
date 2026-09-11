@@ -1,15 +1,14 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
 import re
-from typing import Optional
-import aiohttp
-from db import Database
-from datetime import datetime
-from ui_components import Icons, Colors, AyanamiUI
-import config
-from voice_tracker import VoiceTrackerMixin
 
+import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+import config
+from db import Database
+from ui_components import AyanamiUI, Colors
+from voice_tracker import VoiceTrackerMixin
 
 
 class Economy(VoiceTrackerMixin, commands.Cog):
@@ -23,7 +22,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
     async def cog_load(self):
         self.restore_voice_sessions(self.bot)
 
-    async def fetch_roblox_data_from_api(self, guild_id: int, user_id: int) -> Optional[dict]:
+    async def fetch_roblox_data_from_api(self, guild_id: int, user_id: int) -> dict | None:
         url = f"https://api.blox.link/v4/public/guilds/{guild_id}/discord-to-roblox/{user_id}"
         headers = {"Authorization": self.bloxlink_api_key}
         try:
@@ -104,7 +103,6 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         if not interaction.guild: return
         await interaction.response.defer()
         target = member or interaction.user
-        guild_icon = interaction.guild.icon.url if interaction.guild.icon else None
         data = await self.db.get_or_create_user(str(interaction.guild.id), str(target.id))
         api_data = await self.fetch_roblox_data_from_api(interaction.guild.id, target.id)
         if api_data:

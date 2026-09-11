@@ -1,12 +1,10 @@
+
 import discord
-import json
-import random
-from datetime import datetime, timezone
-from discord.ext import commands
 from discord import app_commands
-from typing import Optional, Literal
+from discord.ext import commands
+
 from db import Database
-from ui_components import Icons, Colors, AyanamiUI
+from ui_components import AyanamiUI, Colors
 
 RARITY_PRICE = {
     "common": 50,
@@ -220,7 +218,7 @@ class Shop(commands.Cog):
 
         elif item['item_type'] == 'temp_role' and item.get('role_id'):
             import json
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timedelta, timezone
             meta = json.loads(item.get('metadata', '{}'))
             hours = meta.get('hours', 24)
             role = interaction.guild.get_role(int(item['role_id']))
@@ -245,7 +243,8 @@ class Shop(commands.Cog):
             await self.db.conn.commit()
 
         elif item['item_type'] == 'lootbox':
-            import random, json
+            import json
+            import random
             meta = json.loads(item.get('metadata', '{}'))
             min_reward = meta.get('min_reward', 50)
             max_reward = meta.get('max_reward', 500)
@@ -262,7 +261,7 @@ class Shop(commands.Cog):
 
         elif item['item_type'] == 'xp_boost':
             import json
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timedelta, timezone
             meta = json.loads(item.get('metadata', '{}'))
             multiplier = meta.get('multiplier', 1.5)
             hours = meta.get('hours', 24)

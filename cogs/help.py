@@ -1,8 +1,9 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
-from ui_components import Colors
+from discord.ext import commands
+
 from db import Database
+from ui_components import Colors
 
 
 class HelpDropdown(discord.ui.Select):

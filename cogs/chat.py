@@ -3,8 +3,9 @@ from collections import deque
 
 import discord
 from discord.ext import commands
-from db import Database
+
 import ai_client
+from db import Database
 
 DEFAULT_SYSTEM_PROMPT = (
     "Ты — Аянами, дружелюбный Discord-бот русского сервера «{server}». "

@@ -4,14 +4,13 @@
 Доступ защищён базик-аутентификацией (DASHBOARD_SECRET из .env).
 """
 
-import discord
-import json
-from aiohttp import web
 from datetime import datetime, timezone
+
+from aiohttp import web
 from discord.ext import commands
-from db import Database
-from ui_components import Colors
+
 import config
+from db import Database
 
 
 class DashboardPages(commands.Cog):

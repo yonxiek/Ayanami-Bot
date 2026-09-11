@@ -1,9 +1,10 @@
+from datetime import datetime, timezone
+
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone, timedelta
-from db import Database
-from ui_components import Icons, Colors, AyanamiUI
 
+from db import Database
+from ui_components import Colors
 
 
 class Levels(commands.Cog):

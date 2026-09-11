@@ -1,14 +1,16 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-from typing import Optional
-from datetime import datetime, timedelta
-from db import Database
-from ui_components import Icons, Colors, AyanamiUI
-import re
 import asyncio
+import re
+from datetime import datetime, timedelta
 
-def parse_duration(duration: str) -> Optional[timedelta]:
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from db import Database
+from ui_components import AyanamiUI, Colors, Icons
+
+
+def parse_duration(duration: str) -> timedelta | None:
     pattern = re.compile(r'(\d+)([smhd])')
     matches = pattern.findall(duration.lower())
     if not matches: return None
@@ -135,10 +137,8 @@ class Moderation(commands.Cog):
             await self.db.conn.execute('INSERT OR REPLACE INTO mod_stats (guild_id, moderator_id, action_type, count) VALUES (?, ?, ?, ?)', 
                                      (str(interaction.guild.id), str(member.id), action, count))
             await self.db.conn.commit()
-            text = f"> Модератору {member.mention} **установлено** точное значение `{count}` для действия `{action}`."
         else:
             await self.db.increment_mod_stat(str(interaction.guild.id), str(member.id), action, count)
-            text = f"> Модератору {member.mention} **добавлено** `{count}` к действию `{action}`."
         
         embed = discord.Embed(color=discord.Color(0x2b2d31))
         embed.title = "Изменение статистики"
@@ -349,7 +349,7 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="warns", description="Посмотреть список предупреждений участника")
     @app_commands.describe(member="Участник (оставьте пустым для себя)")
-    async def warns(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    async def warns(self, interaction: discord.Interaction, member: discord.Member | None = None):
         target = member or interaction.user
         cursor = await self.db.conn.execute(
             'SELECT id, moderator_id, reason, timestamp FROM warns WHERE guild_id = ? AND user_id = ?',
@@ -418,7 +418,7 @@ class Moderation(commands.Cog):
             if interaction.guild.banner:
                 embed.set_image(url=interaction.guild.banner.url)
             mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
-            user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {str(member.id)}"
+            user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {member.id!s}"
             embed.add_field(name="Модератор", value=mod_line, inline=False)
             embed.add_field(name="Участник", value=user_line, inline=False)
             embed.add_field(name="Причина", value=reason, inline=False)
@@ -442,7 +442,7 @@ class Moderation(commands.Cog):
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
         mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
-        user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {str(member.id)}"
+        user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {member.id!s}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
@@ -502,8 +502,6 @@ class Moderation(commands.Cog):
                 except:
                     pass
 
-                action_type = "Внесение в ЧС"
-
             except discord.Forbidden:
                 return await interaction.followup.send(
                     "❌ Ошибка доступа: Проверьте, что моя роль находится выше всех остальных ролей.")
@@ -512,7 +510,6 @@ class Moderation(commands.Cog):
         else:
             try:
                 await interaction.guild.ban(user, reason=f"Blacklist (Offline) by {interaction.user}: {reason}")
-                action_type = "Внесение в ЧС (Offline)"
             except discord.Forbidden:
                 return await interaction.followup.send(
                     "❌ Не удалось забанить пользователя оффлайн (недостаточно прав).")
@@ -527,7 +524,7 @@ class Moderation(commands.Cog):
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
         mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
-        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.name} {str(user.id)}"
+        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.name} {user.id!s}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
@@ -575,7 +572,7 @@ class Moderation(commands.Cog):
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
         mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
-        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.name} {str(user.id)}"
+        user_line = f"{user.mention if hasattr(user, 'mention') else str(user.id)} {user.name} {user.id!s}"
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)

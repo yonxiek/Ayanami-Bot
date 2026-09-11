@@ -1,5 +1,5 @@
 import ai_client
-from ai_client import normalize_provider, DEFAULT_MODELS
+from ai_client import DEFAULT_MODELS, normalize_provider
 
 
 def test_normalize_valid():

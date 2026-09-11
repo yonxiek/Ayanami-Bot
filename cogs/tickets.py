@@ -1,9 +1,11 @@
-import discord
 from datetime import datetime, timezone
+
+import discord
 from discord.ext import commands
+
+from cogs.achievements import award_achievement
 from db import Database
 from ui_components import Colors
-from cogs.achievements import award_achievement
 
 
 class TicketCloseView(discord.ui.View):

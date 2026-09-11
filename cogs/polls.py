@@ -1,13 +1,14 @@
-import discord
 import json
-from datetime import datetime, timezone, timedelta
-from discord.ext import commands
+from datetime import datetime, timedelta, timezone
+
+import discord
 from discord import app_commands
+from discord.ext import commands
+
+from cogs.achievements import award_achievement
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
-from cogs.achievements import award_achievement
-
 
 OPTION_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
@@ -108,7 +109,7 @@ class Polls(commands.Cog):
         )
         await self.db.conn.commit()
 
-        await interaction.response.send_message(f"✅ Голосование создано!", ephemeral=True)
+        await interaction.response.send_message("✅ Голосование создано!", ephemeral=True)
         await award_achievement(self.db, str(interaction.guild.id), str(interaction.user.id), "first_poll", interaction.user)
 
     @app_commands.command(name="poll_end", description="Завершить голосование")
@@ -265,17 +266,14 @@ class Polls(commands.Cog):
 
     @commands.command(name="poll")
     async def poll_prefix(self, ctx, question: str, *, options: str):
-        from prefix_adapter import InteractionAdapter
         await self.poll.callback(self, InteractionAdapter(ctx), question, options)
 
     @commands.command(name="poll_end")
     async def poll_end_prefix(self, ctx, message_id: str):
-        from prefix_adapter import InteractionAdapter
         await self.poll_end.callback(self, InteractionAdapter(ctx), message_id)
 
     @commands.command(name="poll_results")
     async def poll_results_prefix(self, ctx, message_id: str):
-        from prefix_adapter import InteractionAdapter
         await self.poll_results.callback(self, InteractionAdapter(ctx), message_id)
 
 

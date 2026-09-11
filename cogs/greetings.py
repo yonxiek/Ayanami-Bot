@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
-from db import Database
 
+from db import Database
 
 
 class Greetings(commands.Cog):
@@ -48,7 +48,7 @@ class Greetings(commands.Cog):
         if not channel:
             return
         try:
-            await channel.send(embed=embed)
+            await channel.send(view=view)
         except Exception:
             pass
 

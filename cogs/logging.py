@@ -1,8 +1,9 @@
+from datetime import datetime, timedelta, timezone
+
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone, timedelta
+
 from db import Database
-from ui_components import Icons
 from voice_tracker import VoiceTrackerMixin
 
 
@@ -719,7 +720,7 @@ class Logging(VoiceTrackerMixin, commands.Cog):
         if before.name != after.name:
             changes.append(f"**Name**: `{before.name}` → `{after.name}`")
         if before.description != after.description:
-            changes.append(f"**Description**: updated")
+            changes.append("**Description**: updated")
         if before.start_time != after.start_time:
             changes.append(f"**Start**: <t:{int(before.start_time.timestamp())}:R> → <t:{int(after.start_time.timestamp())}:R>")
         if before.end_time != after.end_time:

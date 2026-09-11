@@ -4,8 +4,9 @@
 логики когов. Поддерживает текстовые завершения (чат и модерация).
 """
 
+
 import aiohttp
-import json
+
 import config
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"

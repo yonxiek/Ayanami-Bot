@@ -1,9 +1,11 @@
-import discord
 import json
 from datetime import datetime, timezone
+
+import discord
 from discord.ext import commands
-from db import Database
+
 import ai_client
+from db import Database
 
 MODERATION_PROMPT = (
     "Ты — модератор Discord-сервера. Проанализируй сообщение и верни JSON:\n"

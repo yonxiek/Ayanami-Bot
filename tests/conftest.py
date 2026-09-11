@@ -1,4 +1,5 @@
 import pytest_asyncio
+
 from db import Database
 
 

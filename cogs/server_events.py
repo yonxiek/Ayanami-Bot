@@ -1,12 +1,13 @@
+from datetime import datetime, timedelta, timezone
+
 import discord
-import json
-from datetime import datetime, timezone, timedelta
-from discord.ext import commands
 from discord import app_commands
+from discord.ext import commands
+
+from cogs.achievements import award_achievement
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
-from cogs.achievements import award_achievement
 
 
 class EventRSVPView(discord.ui.View):
@@ -201,17 +202,14 @@ class ServerEvents(commands.Cog):
 
     @commands.command(name="event_create")
     async def event_create_prefix(self, ctx, name: str, description: str = "", time: str = None):
-        from prefix_adapter import InteractionAdapter
         await self.event_create.callback(self, InteractionAdapter(ctx), name, description, time)
 
     @commands.command(name="event_list")
     async def event_list_prefix(self, ctx):
-        from prefix_adapter import InteractionAdapter
         await self.event_list.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="event_cancel")
     async def event_cancel_prefix(self, ctx, event_id: int):
-        from prefix_adapter import InteractionAdapter
         await self.event_cancel.callback(self, InteractionAdapter(ctx), event_id)
 
 

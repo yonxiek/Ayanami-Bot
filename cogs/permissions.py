@@ -1,9 +1,9 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
-from db import Database
-from ui_components import Icons, Colors, AyanamiUI
+from discord.ext import commands
 
+from db import Database
+from ui_components import Colors
 
 
 class PermsDashboard(discord.ui.LayoutView):

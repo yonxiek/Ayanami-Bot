@@ -1,13 +1,14 @@
-import discord
 import random
 from datetime import datetime, timezone
-from discord.ext import commands
+
+import discord
 from discord import app_commands
+from discord.ext import commands
+
+from cogs.achievements import award_achievement
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
-from cogs.achievements import award_achievement
-
 
 RARITY_CONFIG = {
     "common": {"color": 0x95a5a6, "label": "Обычная", "emoji": "⚪"},

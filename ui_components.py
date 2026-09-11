@@ -1,5 +1,3 @@
-import discord
-from datetime import datetime
 
 class Icons:
     KICK = "https://cdn.discordapp.com/emojis/1540036508793311332.webp?size=96"

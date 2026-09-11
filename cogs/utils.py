@@ -1,21 +1,21 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands, ui
-from discord.components import MediaGalleryItem
 import asyncio
-import aiohttp
-import re
 import json
 import platform
-from typing import Optional
+import re
 from datetime import datetime, timedelta, timezone
-from db import Database
-from ui_components import Icons, Colors, AyanamiUI
+
+import aiohttp
+import discord
+from discord import app_commands, ui
+from discord.components import MediaGalleryItem
+from discord.ext import commands, tasks
+
 import config
+from db import Database
+from ui_components import AyanamiUI, Colors
 
 
-
-def parse_duration(duration: str) -> Optional[timedelta]:
+def parse_duration(duration: str) -> timedelta | None:
     pattern = re.compile(r'(\d+)([smhd])')
     matches = pattern.findall(duration.lower())
     if not matches: return None
@@ -170,7 +170,7 @@ class ReportMessageModal(ui.Modal, title="\u0416\u0430\u043b\u043e\u0431\u0430 \
             ],
             footer=f"User ID: {self.message.author.id} | Reporter ID: {interaction.user.id} | Message ID: {self.message.id}"
         )
-        await self.log_channel.send(embed=embed)
+        await self.log_channel.send(view=view)
         await interaction.response.send_message("\u2705 \u0412\u0430\u0448\u0430 \u0436\u0430\u043b\u043e\u0431\u0430 \u043d\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0443\u0441\u043f\u0435\u0448\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440\u0430\u043c!", ephemeral=True)
 
 
@@ -199,7 +199,7 @@ class ModeratorModal(ui.Modal, title="Заявка на должность Мо�
         ]:
             embed.add_field(name=name, value=value, inline=False)
         await self.log_channel.send(embed=embed)
-        await interaction.response.send_message(f"Ваша заявка на **Модератора** отправлена!", ephemeral=True)
+        await interaction.response.send_message("Ваша заявка на **Модератора** отправлена!", ephemeral=True)
 
 
 class TrainingModal(ui.Modal, title="\u0417\u0430\u044f\u0432\u043a\u0430 \u043d\u0430 Training Hoster"):
@@ -225,7 +225,7 @@ class TrainingModal(ui.Modal, title="\u0417\u0430\u044f\u0432\u043a\u0430 \u043d
         ]:
             embed.add_field(name=name, value=value, inline=False)
         await self.log_channel.send(embed=embed)
-        await interaction.response.send_message(f"\u0412\u0430\u0448\u0430 \u0437\u0430\u044f\u0432\u043a\u0430 \u043d\u0430 **Training Hoster** \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!", ephemeral=True)
+        await interaction.response.send_message("\u0412\u0430\u0448\u0430 \u0437\u0430\u044f\u0432\u043a\u0430 \u043d\u0430 **Training Hoster** \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!", ephemeral=True)
 
 
 class TryoutModal(ui.Modal, title="\u0417\u0430\u044f\u0432\u043a\u0430 \u043d\u0430 Tryout Hoster"):
@@ -251,7 +251,7 @@ class TryoutModal(ui.Modal, title="\u0417\u0430\u044f\u0432\u043a\u0430 \u043d\u
         ]:
             embed.add_field(name=name, value=value, inline=False)
         await self.log_channel.send(embed=embed)
-        await interaction.response.send_message(f"\u0412\u0430\u0448\u0430 \u0437\u0430\u044f\u0432\u043a\u0430 \u043d\u0430 **Tryout Hoster** \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!", ephemeral=True)
+        await interaction.response.send_message("\u0412\u0430\u0448\u0430 \u0437\u0430\u044f\u0432\u043a\u0430 \u043d\u0430 **Tryout Hoster** \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!", ephemeral=True)
 
 
 class ApplicationView(ui.LayoutView):
@@ -324,7 +324,7 @@ class Utils(commands.Cog):
                         )
                         await channel.send(
                             content=mentions,
-                            view=view,
+                            embed=embed,
                             allowed_mentions=discord.AllowedMentions(users=True)
                         )
                 await self.db.conn.execute("UPDATE events SET pinged = 1 WHERE id = ?", (event['id'],))
@@ -401,7 +401,7 @@ class Utils(commands.Cog):
                     footer=f"User ID: {target_msg.author.id} | Reporter ID: {message.author.id} | Message ID: {target_msg.id}"
                 )
 
-                await report_channel.send(embed=embed)
+                await report_channel.send(view=view)
                 try: await message.delete()
                 except: pass
                 success_msg = await message.channel.send(f"\u2705 {message.author.mention}, \u0432\u0430\u0448\u0430 \u0436\u0430\u043b\u043e\u0431\u0430 \u043d\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0443\u0441\u043f\u0435\u0448\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!")
@@ -409,7 +409,7 @@ class Utils(commands.Cog):
                 try: await success_msg.delete()
                 except: pass
 
-    async def fetch_roblox_data_from_api(self, guild_id: int, user_id: int) -> Optional[dict]:
+    async def fetch_roblox_data_from_api(self, guild_id: int, user_id: int) -> dict | None:
         url = f"https://api.blox.link/v4/public/guilds/{guild_id}/discord-to-roblox/{user_id}"
         headers = {"Authorization": self.bloxlink_api_key}
         try:
@@ -434,9 +434,8 @@ class Utils(commands.Cog):
         return None
 
     @app_commands.command(name="whois", description="\u041f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u043f\u043e\u0434\u0440\u043e\u0431\u043d\u0443\u044e \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044e \u043e\u0431 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0435")
-    async def whois(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    async def whois(self, interaction: discord.Interaction, member: discord.Member | None = None):
         target = member or interaction.user
-        icon = interaction.guild.icon.url if interaction.guild.icon else None
         roles = [role.mention for role in reversed(target.roles[1:])]
         roles_str = " ".join(roles) if roles else "\u041d\u0435\u0442 \u0440\u043e\u043b\u0435\u0439"
         if len(roles_str) > 1024: roles_str = roles_str[:1020] + "..."
@@ -505,7 +504,7 @@ class Utils(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="roblox", description="Посмотреть подробный профиль Roblox участника")
-    async def roblox_cmd(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    async def roblox_cmd(self, interaction: discord.Interaction, member: discord.Member | None = None):
         await interaction.response.defer()
         target = member or interaction.user
         api_data = await self.fetch_roblox_data_from_api(interaction.guild.id, target.id)
@@ -536,7 +535,6 @@ class Utils(commands.Cog):
         followers_url = f"https://friends.roblox.com/v1/users/{roblox_id}/followers/count"
         presence_url = "https://presence.roblox.com/v1/presence/users"
         presence_payload = {"userIds": [roblox_id]}
-        thumbnail = None
         friends_count = 0
         followers_count = 0
         presence_type = 0
@@ -545,8 +543,7 @@ class Utils(commands.Cog):
                 try:
                     async with session.get(avatar_url) as resp:
                         if resp.status == 200:
-                            av_data = await resp.json()
-                            if av_data.get("data"): thumbnail = av_data["data"][0].get("imageUrl")
+                            pass
                 except Exception: pass
                 try:
                     async with session.get(friends_url) as resp:
@@ -626,10 +623,9 @@ class Utils(commands.Cog):
 
     @app_commands.command(name="verify", description="\u0412\u0435\u0440\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f: \u0441\u043c\u0435\u043d\u0430 \u043d\u0438\u043a\u0430 \u0438 \u0432\u044b\u0434\u0430\u0447\u0430 \u0440\u043e\u043b\u0438 Roblox")
     @app_commands.describe(member="\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a (\u043f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u0432\u044b)")
-    async def verify(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    async def verify(self, interaction: discord.Interaction, member: discord.Member | None = None):
         await interaction.response.defer(ephemeral=True)
         target = member or interaction.user
-        icon = interaction.guild.icon.url if interaction.guild.icon else None
 
         config = await self.db.get_guild_config(str(interaction.guild.id))
         verify_config = config.get("verify", {})
@@ -776,7 +772,7 @@ class Utils(commands.Cog):
             color=discord.Color(Colors.MAIN),
         )
         embed.set_footer(text="Ayanami System")
-        await status_msg.edit(content=None, view=view)
+        await status_msg.edit(content=None, embed=embed)
 
     @app_commands.command(name="host", description="\u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0430\u043d\u043e\u043d\u0441 \u0438\u0432\u0435\u043d\u0442\u0430")
     @app_commands.choices(event_type=[
@@ -787,7 +783,7 @@ class Utils(commands.Cog):
         ping_role="\u041a\u0430\u043a\u0443\u044e \u0440\u043e\u043b\u044c \u043f\u0438\u043d\u0433\u0430\u043d\u0443\u0442\u044c? (\u041d\u0435\u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e)"
     )
     @app_commands.default_permissions(manage_messages=True)
-    async def host_cmd(self, interaction: discord.Interaction, event_type: str, duration: str, ping_role: Optional[discord.Role] = None):
+    async def host_cmd(self, interaction: discord.Interaction, event_type: str, duration: str, ping_role: discord.Role | None = None):
         delta = parse_duration(duration)
         if not delta:
             return await interaction.response.send_message("\u274c \u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u0444\u043e\u0440\u043c\u0430\u0442 \u0432\u0440\u0435\u043c\u0435\u043d\u0438 (\u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439\u0442\u0435 10m, 1h, 1d).", ephemeral=True)
@@ -869,21 +865,22 @@ class Utils(commands.Cog):
         await self.db.conn.commit()
 
     @commands.command(name="whois")
-    async def whois_prefix(self, ctx, member: Optional[discord.Member] = None):
+    async def whois_prefix(self, ctx, member: discord.Member | None = None):
         from prefix_adapter import InteractionAdapter
         await self.whois.callback(self, InteractionAdapter(ctx), member)
 
     @commands.command(name="roblox")
-    async def roblox_prefix(self, ctx, member: Optional[discord.Member] = None):
+    async def roblox_prefix(self, ctx, member: discord.Member | None = None):
         from prefix_adapter import InteractionAdapter
         await self.roblox_cmd.callback(self, InteractionAdapter(ctx), member)
 
     @commands.command(name="report")
     async def report_prefix(self, ctx, member: discord.Member, *, reason: str):
+        from prefix_adapter import InteractionAdapter
         await self.report_cmd.callback(self, InteractionAdapter(ctx), member, reason, "")
 
     @commands.command(name="verify")
-    async def verify_prefix(self, ctx, member: Optional[discord.Member] = None):
+    async def verify_prefix(self, ctx, member: discord.Member | None = None):
         from prefix_adapter import InteractionAdapter
         await self.verify.callback(self, InteractionAdapter(ctx), member)
 
@@ -894,7 +891,7 @@ class Utils(commands.Cog):
 
     @commands.command(name="host")
     @commands.has_permissions(manage_messages=True)
-    async def host_prefix(self, ctx, event_type: str, duration: str, ping_role: Optional[discord.Role] = None):
+    async def host_prefix(self, ctx, event_type: str, duration: str, ping_role: discord.Role | None = None):
         from prefix_adapter import InteractionAdapter
         await self.host_cmd.callback(self, InteractionAdapter(ctx), event_type, duration, ping_role)
 

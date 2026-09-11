@@ -1,13 +1,14 @@
-import discord
-from datetime import timedelta, timezone, datetime
-from discord.ext import commands
+import logging
 import os
 import sys
-import logging
 import time
 import traceback
-from db import Database
+from datetime import datetime, timedelta, timezone
 
+import discord
+from discord.ext import commands
+
+from db import Database
 
 logging.getLogger('discord.app_commands').setLevel(logging.CRITICAL)
 
@@ -17,7 +18,7 @@ os.makedirs("cogs", exist_ok=True)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from config import TOKEN, PREFIX
+    from config import PREFIX, TOKEN, ERROR_WEBHOOK_URL
 except ImportError:
     print("Ошибка: Файл config.py не найден!")
     exit(1)
@@ -52,10 +53,31 @@ bot = commands.Bot(
 )
 
 
+async def _send_error_webhook(title: str, error_text: str, *extra: str) -> None:
+    if not ERROR_WEBHOOK_URL:
+        return
+    try:
+        webhook = discord.Webhook.from_url(ERROR_WEBHOOK_URL, client=bot)
+        description = error_text.strip() or "Без подробностей"
+        if extra:
+            description += "\n\n" + "\n".join(x for x in extra if x)
+        embed = discord.Embed(
+            title=title[:256],
+            description=(description[:4000] or "Без подробностей"),
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await webhook.send(embed=embed)
+    except Exception:
+        print("Ошибка при отправке в error-вебхук:")
+        traceback.print_exc()
+
+
 @bot.event
 async def on_error(event, *args, **kwargs):
     print(f'Ошибка в {event}: {args} {kwargs}')
     traceback.print_exc()
+    await _send_error_webhook(f"Ошибка события: `{event}`", traceback.format_exc(), repr(args[:2]))
 
 
 @bot.event
@@ -90,7 +112,7 @@ async def load_cogs():
             try:
                 await bot.load_extension(cog_name)
                 cogs_loaded += 1
-            except Exception as e:
+            except Exception:
                 print(f"  ✗ Ошибка загрузки {filename}:")
                 traceback.print_exc()
                 cogs_failed += 1
@@ -205,6 +227,11 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
         return
 
     print(f"❌ Ошибка: {error}")
+    tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    await _send_error_webhook(
+        f"Ошибка команды `/{interaction.command.qualified_name}`" if interaction.command else "Ошибка команды",
+        tb, f"Пользователь: {interaction.user} (id: {interaction.user.id})"
+    )
     if not interaction.response.is_done():
         embed = discord.Embed(
             title="❌ Ошибка",
@@ -277,6 +304,11 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
 
     print(f"❌ Ошибка в команде {ctx.command}: {error}")
     traceback.print_exc()
+    tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    await _send_error_webhook(
+        f"Ошибка команды `{ctx.command}`" if ctx.command else "Ошибка команды",
+        tb, f"Пользователь: {ctx.author} (id: {ctx.author.id})"
+    )
 
 
 @bot.check

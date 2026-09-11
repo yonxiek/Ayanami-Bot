@@ -1,12 +1,14 @@
+import base64
+
 import aiohttp
 import discord
-import base64
-from discord.ext import commands
 from discord import app_commands
+from discord.ext import commands
+
+import ai_client
+import config
 from db import Database
 from ui_components import Colors
-import config
-import ai_client
 
 IMAGEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
 IMAGEN_MODELS = ["imagen-3.0-generate-002", "imagen-4.0-generate-001", "imagen-3.0-generate-001"]

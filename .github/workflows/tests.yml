@@ -29,6 +29,9 @@ jobs:
       - name: Проверка загрузки когов
         run: python load_check.py
 
+      - name: Линтинг (ruff)
+        run: python -m ruff check .
+
       - name: Синтаксическая проверка
         run: |
           python -m compileall -q cogs
