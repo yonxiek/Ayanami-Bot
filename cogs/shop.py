@@ -6,14 +6,6 @@ from discord.ext import commands
 from db import Database
 from ui_components import AyanamiUI, Colors
 
-RARITY_PRICE = {
-    "common": 50,
-    "rare": 150,
-    "epic": 400,
-    "legendary": 1200,
-}
-
-
 
 class ShopView(discord.ui.View):
     def __init__(self, cog, guild_id, user_id, page=0):
@@ -154,30 +146,6 @@ class Shop(commands.Cog):
             return await interaction.followup.send("❌ Товар не найден.", ephemeral=True)
 
         await self.execute_buy(interaction, item)
-
-    @app_commands.command(name="sell_card", description="Продать карточку за монеты")
-    @app_commands.describe(card_id="ID карточки", amount="Количество (по умолчанию 1)")
-    async def sell_card(self, interaction: discord.Interaction, card_id: str, amount: int = 1):
-        if not interaction.guild:
-            return
-        if amount < 1:
-            return await interaction.response.send_message("❌ Количество должно быть >= 1.", ephemeral=True)
-        guild_id = str(interaction.guild.id)
-        card = await self.db.get_card(guild_id, card_id)
-        if not card:
-            return await interaction.response.send_message("❌ Карточка не найдена.", ephemeral=True)
-        price = RARITY_PRICE.get(card['rarity'], 50)
-        earned = await self.db.sell_card(guild_id, str(interaction.user.id), card_id, amount, price)
-        if earned <= 0:
-            return await interaction.response.send_message("❌ У вас нет этих карточек.", ephemeral=True)
-        r_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}.get(card['rarity'], "🃏")
-        embed = discord.Embed(
-            title="Карточка продана",
-            description=f"{r_emoji} Продано **{amount}** x **{card['name']}** за **{earned}** {AyanamiUI.E_RP}!",
-            color=Colors.SUCCESS,
-        )
-        embed.set_footer(text="Ayanami System")
-        await interaction.response.send_message(embed=embed)
 
     async def execute_buy(self, interaction: discord.Interaction, item: dict):
         guild_id = str(interaction.guild.id)
@@ -357,11 +325,6 @@ class Shop(commands.Cog):
     async def buy_prefix(self, ctx, item_id: str):
         from prefix_adapter import InteractionAdapter
         await self.buy.callback(self, InteractionAdapter(ctx), item_id)
-
-    @commands.command(name="sell_card")
-    async def sell_card_prefix(self, ctx, card_id: str, amount: int = 1):
-        from prefix_adapter import InteractionAdapter
-        await self.sell_card.callback(self, InteractionAdapter(ctx), card_id, amount)
 
     @commands.command(name="inventory")
     async def inventory_prefix(self, ctx, member: discord.Member = None):

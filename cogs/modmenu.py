@@ -41,6 +41,14 @@ class ModMenuView(discord.ui.View):
         super().__init__(timeout=180)
         self.cog = cog
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.cog._can_mod(interaction.user):
+            await interaction.response.send_message(
+                "⛔ Это меню доступно только модераторам.", ephemeral=True
+            )
+            return False
+        return True
+
     @discord.ui.select(
         placeholder="Выберите раздел модерации...",
         options=[
@@ -99,6 +107,14 @@ class ModCategoryView(discord.ui.View):
         back = discord.ui.Button(label="Назад", emoji="◀️", style=discord.ButtonStyle.grey, row=3)
         back.callback = self._back
         self.add_item(back)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not self.cog._can_mod(interaction.user):
+            await interaction.response.send_message(
+                "⛔ Это меню доступно только модераторам.", ephemeral=True
+            )
+            return False
+        return True
 
     def _make_callback(self, action: str):
         async def callback(interaction: discord.Interaction):

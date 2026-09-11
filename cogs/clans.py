@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 
 import discord
@@ -64,6 +65,7 @@ class ClanCreateModal(discord.ui.Modal, title="Создать клан"):
         )
         await interaction.followup.send(embed=embed)
         await award_achievement(self.cog.db, guild_id, user_id, "clan_create", interaction.user)
+        await self._apply_clan_tag(interaction.user, tag)
 
 
 class Clans(commands.Cog):
@@ -72,6 +74,36 @@ class Clans(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
+
+    async def _apply_clan_tag(self, member: discord.Member, tag: str):
+        """Добавляет тег клана перед ником: [ТЕГ] Ник."""
+        tag_clean = (tag or "").strip().upper()
+        if not tag_clean:
+            return
+        try:
+            current = member.nick or member.name
+            cleaned = re.sub(rf"^\[{re.escape(tag_clean)}\]\s*", "", current)
+            new_nick = f"[{tag_clean}] {cleaned}"
+            if current != new_nick:
+                await member.edit(nick=new_nick)
+        except discord.HTTPException:
+            pass
+
+    async def _clear_clan_tag(self, member: discord.Member, tag: str):
+        """Снимает тег клана с ника при выходе из клана."""
+        tag_clean = (tag or "").strip().upper()
+        if not tag_clean:
+            return
+        try:
+            current = member.nick or member.name
+            cleaned = re.sub(rf"^\[{re.escape(tag_clean)}\]\s*", "", current)
+            if cleaned != current:
+                if cleaned == member.name:
+                    await member.edit(nick=None)
+                else:
+                    await member.edit(nick=cleaned)
+        except discord.HTTPException:
+            pass
 
     async def clan_create(self, interaction: discord.Interaction):
         user = await self.db.get_or_create_user(str(interaction.guild.id), str(interaction.user.id))
@@ -138,7 +170,7 @@ class Clans(commands.Cog):
             return await interaction.response.send_message("❌ Вы уже в клане. Покиньте его через **/menu → Кланы**.", ephemeral=True)
 
         cursor = await self.db.conn.execute(
-            "SELECT id FROM clans WHERE guild_id = ? AND name = ?", (guild_id, clan_name)
+            "SELECT id, tag FROM clans WHERE guild_id = ? AND name = ?", (guild_id, clan_name)
         )
         row = await cursor.fetchone()
         if not row:
@@ -151,13 +183,14 @@ class Clans(commands.Cog):
         await self.db.conn.commit()
         await interaction.response.send_message(f"✅ Вы вступили в клан **{clan_name}**!")
         await award_achievement(self.db, guild_id, user_id, "clan_join", interaction.user)
+        await self._apply_clan_tag(interaction.user, row["tag"])
 
     async def clan_leave(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
 
         cursor = await self.db.conn.execute(
-            "SELECT cm.clan_id, cm.role, c.name FROM clan_members cm "
+            "SELECT cm.clan_id, cm.role, c.name, c.tag FROM clan_members cm "
             "JOIN clans c ON cm.clan_id = c.id WHERE cm.guild_id = ? AND cm.user_id = ?",
             (guild_id, user_id)
         )
@@ -171,6 +204,7 @@ class Clans(commands.Cog):
             "DELETE FROM clan_members WHERE guild_id = ? AND user_id = ?", (guild_id, user_id)
         )
         await self.db.conn.commit()
+        await self._clear_clan_tag(interaction.user, row["tag"])
         await interaction.response.send_message(f"✅ Вы покинули клан **{row['name']}**.")
 
     async def clan_top(self, interaction: discord.Interaction):

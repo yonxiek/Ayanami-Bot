@@ -172,6 +172,7 @@ class Moderation(commands.Cog):
             pass
 
     @app_commands.command(name="lock", description="Закрыть канал")
+    @app_commands.default_permissions(manage_channels=True)
     async def lock(self, interaction: discord.Interaction):
         await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=False)
         
@@ -189,6 +190,7 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="unlock", description="Открыть канал")
+    @app_commands.default_permissions(manage_channels=True)
     async def unlock(self, interaction: discord.Interaction):
         await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=None)
         
@@ -773,11 +775,13 @@ class Moderation(commands.Cog):
         await self.modstats_set.callback(self, InteractionAdapter(ctx), member, action, make_choice(mode), count)
 
     @commands.command(name="lock")
+    @commands.has_permissions(manage_channels=True)
     async def lock_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
         await self.lock.callback(self, InteractionAdapter(ctx))
 
     @commands.command(name="unlock")
+    @commands.has_permissions(manage_channels=True)
     async def unlock_prefix(self, ctx):
         from prefix_adapter import InteractionAdapter
         await self.unlock.callback(self, InteractionAdapter(ctx))

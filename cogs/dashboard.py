@@ -3441,7 +3441,7 @@ class SetupCardsView(discord.ui.View):
             "**Для игроков:**",
             "• `/menu` → раздел **Карточки**: выбросить (кулдаун 5 мин)",
             "• в разделе: коллекция, передать другому игроку",
-            "• `/shop buy` и `/sell_card` — купить/продать карточки",
+            "• `/shop buy` — купить карточки из магазина",
         ]
         embed = discord.Embed(title="🃏 Карточки — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
