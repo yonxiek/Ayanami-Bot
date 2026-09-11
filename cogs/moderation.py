@@ -753,6 +753,67 @@ class Moderation(commands.Cog):
         embed.set_footer(text="Ayanami System")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    async def set_slowmode(self, interaction: discord.Interaction, seconds: int):
+        if not 0 <= seconds <= 21600:
+            return await interaction.response.send_message("❌ Слоумод: от 0 до 21600 секунд.", ephemeral=True)
+        try:
+            await interaction.channel.edit(slowmode_delay=seconds)
+        except discord.Forbidden:
+            return await interaction.response.send_message("❌ Нет прав менять слоумод.", ephemeral=True)
+        text = "выключен" if seconds == 0 else f"{seconds} сек."
+        await interaction.response.send_message(
+            f"✅ Слоумод в {interaction.channel.mention}: **{text}**.", ephemeral=True
+        )
+        self.bot.dispatch("moderation_log", "slowmode", interaction.guild, interaction.channel, interaction.user,
+                          reason=f"Слоумод: {text}")
+
+    async def change_nickname(self, interaction: discord.Interaction, member: discord.Member, new_nick: str):
+        if member.top_role >= interaction.guild.me.top_role and interaction.user.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("❌ Нельзя менять ник этому участнику.", ephemeral=True)
+        try:
+            await member.edit(nick=new_nick or None, reason=f"Смена ника от {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.response.send_message("❌ Нет прав Manage Nicknames.", ephemeral=True)
+        text = new_nick.strip() or "сброшен (никнейм)"
+        await interaction.response.send_message(f"✅ Ник {member.mention} → **{text}**.", ephemeral=True)
+        self.bot.dispatch("moderation_log", "nick", interaction.guild, member, interaction.user, reason=f"Ник: {text}")
+
+    async def voice_kick(self, interaction: discord.Interaction, member: discord.Member):
+        if not member.voice or not member.voice.channel:
+            return await interaction.response.send_message("❌ Участник не в голосовом канале.", ephemeral=True)
+        try:
+            await member.move_to(None, reason=f"Отключение из войса от {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.response.send_message("❌ Нет прав Move Members.", ephemeral=True)
+        await interaction.response.send_message(f"✅ {member.mention} отключён из голосового канала.", ephemeral=True)
+        self.bot.dispatch("moderation_log", "disconnect", interaction.guild, member, interaction.user,
+                          reason="Отключён из войса")
+
+    async def set_deafen(self, interaction: discord.Interaction, member: discord.Member, deafen: bool):
+        try:
+            await member.edit(deafen=deafen, reason=f"{'Заглушен' if deafen else 'Снят деафен'} модератором {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.response.send_message("❌ Нет прав Deafen Members.", ephemeral=True)
+        action_text = "заглушён (deafen)" if deafen else "разглушён"
+        await interaction.response.send_message(f"✅ {member.mention} {action_text}.", ephemeral=True)
+        self.bot.dispatch("moderation_log", "deafen" if deafen else "undeafen", interaction.guild, member,
+                          interaction.user, reason=action_text)
+
+    async def set_role(self, interaction: discord.Interaction, member: discord.Member, role: discord.Role, remove: bool):
+        if role >= interaction.guild.me.top_role:
+            return await interaction.response.send_message("❌ Не могу управлять этой ролью (она выше моей).", ephemeral=True)
+        try:
+            if remove:
+                await member.remove_roles(role, reason=f"Снятие роли от {interaction.user}")
+            else:
+                await member.add_roles(role, reason=f"Выдача роли от {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.response.send_message("❌ Нет прав Manage Roles.", ephemeral=True)
+        text = "снята" if remove else "выдана"
+        await interaction.response.send_message(f"✅ Роль {role.mention} {text} у {member.mention}.", ephemeral=True)
+        self.bot.dispatch("moderation_log", "role", interaction.guild, member, interaction.user,
+                          reason=f"{'Снята' if remove else 'Выдана'} роль {role.name}")
+
     # ============================================================
     #            ПРЕФИКСНЫЕ (текстовые) ВЕРСИИ КОМАНД
     # ============================================================

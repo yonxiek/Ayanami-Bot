@@ -10,6 +10,9 @@ COLORS = {
     "Каналы": 0x3498db,
     "Чёрный список": 0x95a5a6,
     "Журнал": 0xf1c40f,
+    "Ники": 0x1abc9c,
+    "Голос": 0x9b59b6,
+    "Роли": 0xe67e22,
 }
 
 
@@ -53,7 +56,10 @@ class ModMenuView(discord.ui.View):
         placeholder="Выберите раздел модерации...",
         options=[
             discord.SelectOption(label="Санкции", description="Варны, муты, кики, баны", emoji="🎯"),
-            discord.SelectOption(label="Каналы", description="Очистка, лок и анлок", emoji="🧰"),
+            discord.SelectOption(label="Каналы", description="Очистка, слоумод, лок и анлок", emoji="🧰"),
+            discord.SelectOption(label="Ники", description="Смена и сброс ника", emoji="🔤"),
+            discord.SelectOption(label="Голос", description="Войс-кик, заглушение", emoji="🎙️"),
+            discord.SelectOption(label="Роли", description="Выдача и снятие ролей", emoji="🎭"),
             discord.SelectOption(label="Чёрный список", description="В ЧС и снятие ЧС", emoji="🚫"),
             discord.SelectOption(label="Журнал", description="Заметки и история", emoji="📝"),
         ],
@@ -86,8 +92,22 @@ class ModCategoryView(discord.ui.View):
             ],
             "Каналы": [
                 ("clear", "Очистить", "🧹"),
+                ("slowmode", "Слоумод", "🐢"),
                 ("lock", "Лок", "🔒"),
                 ("unlock", "Анлок", "🔓"),
+            ],
+            "Ники": [
+                ("nick", "Сменить ник", "🔤"),
+                ("reset_nick", "Сбросить ник", "♻️"),
+            ],
+            "Голос": [
+                ("disconnect", "Войс-кик", "📤"),
+                ("deafen", "Заглушить", "🔕"),
+                ("undeafen", "Разглушить", "🔔"),
+            ],
+            "Роли": [
+                ("giverole", "Выдать роль", "➕"),
+                ("removerole", "Снять роль", "➖"),
             ],
             "Чёрный список": [
                 ("blacklist", "В ЧС", "🚫"),
@@ -147,6 +167,14 @@ class ModMenu(commands.Cog):
         "modnote": (("Участник", "@Имя", True, 40), ("Текст заметки", "Что было замечено", True, 1024)),
         "history": (("Участник", "@Имя", True, 40),),
         "clear": (("Количество сообщений", "50", True, 5),),
+        "slowmode": (("Секунды", "0 = выключить (макс. 21600)", True, 6),),
+        "nick": (("Участник", "@Имя", True, 40), ("Новый ник", "пусто = сбросить", False, 40)),
+        "reset_nick": (("Участник", "@Имя", True, 40),),
+        "disconnect": (("Участник", "@Имя", True, 40),),
+        "deafen": (("Участник", "@Имя", True, 40),),
+        "undeafen": (("Участник", "@Имя", True, 40),),
+        "giverole": (("Участник", "@Имя", True, 40), ("Роль", "ID или название", True, 40)),
+        "removerole": (("Участник", "@Имя", True, 40), ("Роль", "ID или название", True, 40)),
     }
 
     PERMS = {
@@ -156,6 +184,10 @@ class ModMenu(commands.Cog):
         "blacklist": ("manage_roles",), "unblacklist": ("manage_roles",),
         "modnote": ("moderate_members",), "history": ("moderate_members",),
         "clear": ("manage_messages",), "lock": ("manage_channels",), "unlock": ("manage_channels",),
+        "slowmode": ("manage_channels",),
+        "nick": ("manage_nicknames",), "reset_nick": ("manage_nicknames",),
+        "disconnect": ("move_members",), "deafen": ("deafen_members",), "undeafen": ("deafen_members",),
+        "giverole": ("manage_roles",), "removerole": ("manage_roles",),
     }
 
     TITLES = {
@@ -164,6 +196,9 @@ class ModMenu(commands.Cog):
         "unblacklist": "Снять с ЧС", "modnote": "Заметка модератора",
         "history": "История участника", "clear": "Очистить канал",
         "lock": "Закрыть канал", "unlock": "Открыть канал",
+        "slowmode": "Слоумод", "nick": "Сменить ник", "reset_nick": "Сбросить ник",
+        "disconnect": "Войс-кик", "deafen": "Заглушить (deafen)", "undeafen": "Разглушить",
+        "giverole": "Выдать роль", "removerole": "Снять роль",
     }
 
     def __init__(self, bot):
@@ -242,6 +277,13 @@ class ModMenu(commands.Cog):
         if not cog:
             return await interaction.response.send_message("❌ Модуль модерации недоступен.", ephemeral=True)
 
+        if action == "slowmode":
+            try:
+                seconds = int(values[0])
+            except ValueError:
+                return await interaction.response.send_message("❌ Укажите число секунд.", ephemeral=True)
+            return await cog.set_slowmode(interaction, seconds)
+
         if action == "clear":
             try:
                 amount = int(values[0])
@@ -289,8 +331,32 @@ class ModMenu(commands.Cog):
             return await cog.modnote.callback(cog, interaction, member, values[1])
         if action == "history":
             return await cog.history.callback(cog, interaction, member)
+        if action == "nick":
+            return await cog.change_nickname(interaction, member, values[1].strip() if len(values) > 1 else "")
+        if action == "reset_nick":
+            return await cog.change_nickname(interaction, member, "")
+        if action == "disconnect":
+            return await cog.voice_kick(interaction, member)
+        if action == "deafen":
+            return await cog.set_deafen(interaction, member, True)
+        if action == "undeafen":
+            return await cog.set_deafen(interaction, member, False)
+        if action in ("giverole", "removerole"):
+            role = self._resolve_role(interaction.guild, values[1])
+            if not role:
+                return await interaction.response.send_message("❌ Роль не найдена.", ephemeral=True)
+            return await cog.set_role(interaction, member, role, action == "removerole")
 
         return await interaction.response.send_message("❌ Неизвестное действие.", ephemeral=True)
+
+    def _resolve_role(self, guild: discord.Guild, text: str) -> discord.Role | None:
+        text = text.strip()
+        digits = re.sub(r"\D", "", text)
+        if digits:
+            role = guild.get_role(int(digits))
+            if role:
+                return role
+        return discord.utils.get(guild.roles, name=text)
 
     async def _fetch_user(self, interaction, user_id: int):
         try:
