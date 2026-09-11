@@ -141,6 +141,8 @@ class Clans(commands.Cog):
 
         member_lines = []
         for m in members:
+            if not interaction.guild.get_member(int(m["user_id"])):
+                continue
             role_emoji = "👑" if m["role"] == "leader" else "⚔️"
             member_lines.append(f"{role_emoji} <@{m['user_id']}>")
 

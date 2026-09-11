@@ -2775,7 +2775,9 @@ class SetupTitlesView(discord.ui.View):
         desc = ""
         for row in rows:
             member = interaction.guild.get_member(int(row['user_id']))
-            name = member.display_name if member else f"ID: {row['user_id']}"
+            if not member:
+                continue
+            name = member.display_name
             active = " ✅" if row['active'] else ""
             desc += f"> {row['emoji']} **{row['title']}** — {name}{active}\n"
         embed = discord.Embed(title="Участники с титулами", description=desc, color=Colors.MAIN)
@@ -2990,14 +2992,18 @@ class SetupLevelsView(discord.ui.View):
 
     @discord.ui.button(label="Топ-10", emoji="🏆", style=discord.ButtonStyle.grey, row=3)
     async def btn_top(self, interaction: discord.Interaction, button: discord.ui.Button):
-        top = await self.db.get_top_users_by_level(str(self.guild_id), 10)
+        top = await self.db.get_top_users_by_level(str(self.guild_id), 100)
         if not top:
             return await interaction.response.send_message("Пока нет данных.", ephemeral=True)
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         desc = ""
         for i, entry in enumerate(top):
             member = interaction.guild.get_member(int(entry['user_id']))
-            name = member.display_name if member else f"ID: {entry['user_id']}"
+            if not member:
+                continue
+            if desc.count("\n") >= 9:
+                break
+            name = member.display_name
             medal = medals.get(i + 1, f"**{i + 1}.**")
             desc += f"{medal} **{name}** — Ур. `{entry['level']}` (`{entry['exp']}` XP)\n"
         embed = discord.Embed(title="🏆 Топ-10 по уровню", description=desc, color=discord.Color(0xf1c40f))

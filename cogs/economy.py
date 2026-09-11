@@ -135,12 +135,15 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         medals = ["🥇", "🥈", "🥉"]
 
         if tab == "level":
-            top_users = await self.db.get_top_users_by_level(guild_id, 15)
+            top_users = await self.db.get_top_users_by_level(guild_id, 100)
             entries = []
             for entry in top_users:
                 member = interaction.guild.get_member(int(entry["user_id"]))
-                name = member.display_name if member else f"ID: {entry['user_id']}"
-                entries.append((name, f"Ур. **{entry['level']}** • `{entry['exp']}` XP"))
+                if not member:
+                    continue
+                entries.append((member.display_name, f"Ур. **{entry['level']}** • `{entry['exp']}` XP"))
+                if len(entries) >= 15:
+                    break
             title = "Топ по уровню"
             color = discord.Color(0xF1C40F)
             icon = "⭐"
@@ -149,15 +152,18 @@ class Economy(VoiceTrackerMixin, commands.Cog):
             cursor = await self.db.conn.execute(
                 "SELECT user_id, total_messages FROM users "
                 "WHERE guild_id = ? AND total_messages > 0 "
-                "ORDER BY total_messages DESC LIMIT 15",
+                "ORDER BY total_messages DESC LIMIT 100",
                 (guild_id,),
             )
             rows = await cursor.fetchall()
             entries = []
             for row in rows:
                 member = interaction.guild.get_member(int(row["user_id"]))
-                name = member.display_name if member else f"ID: {row['user_id']}"
-                entries.append((name, f"**{row['total_messages']:,}** сообщений"))
+                if not member:
+                    continue
+                entries.append((member.display_name, f"**{row['total_messages']:,}** сообщений"))
+                if len(entries) >= 15:
+                    break
             title = "Топ по сообщениям"
             color = discord.Color(0x3498DB)
             icon = "💬"
@@ -166,28 +172,35 @@ class Economy(VoiceTrackerMixin, commands.Cog):
             cursor = await self.db.conn.execute(
                 "SELECT user_id, total_voice_minutes FROM users "
                 "WHERE guild_id = ? AND total_voice_minutes > 0 "
-                "ORDER BY total_voice_minutes DESC LIMIT 15",
+                "ORDER BY total_voice_minutes DESC LIMIT 100",
                 (guild_id,),
             )
             rows = await cursor.fetchall()
             entries = []
             for row in rows:
                 member = interaction.guild.get_member(int(row["user_id"]))
-                name = member.display_name if member else f"ID: {row['user_id']}"
+                if not member:
+                    continue
+                name = member.display_name
                 mins = row["total_voice_minutes"]
                 time_text = f"{mins // 60}ч {mins % 60}м" if mins >= 60 else f"{mins}м"
                 entries.append((name, time_text))
+                if len(entries) >= 15:
+                    break
             title = "Топ по голосу"
             color = discord.Color(0x9B59B6)
             icon = "🎙️"
 
         else:
-            top_users = await self.db.get_top_users(guild_id, 15)
+            top_users = await self.db.get_top_users(guild_id, 100)
             entries = []
             for entry in top_users:
                 member = interaction.guild.get_member(int(entry["user_id"]))
-                name = member.display_name if member else f"ID: {entry['user_id']}"
-                entries.append((name, f"**{entry['balance']:,}** {AyanamiUI.E_RP}"))
+                if not member:
+                    continue
+                entries.append((member.display_name, f"**{entry['balance']:,}** {AyanamiUI.E_RP}"))
+                if len(entries) >= 15:
+                    break
             title = "Топ по монеткам"
             color = Colors.MAIN
             icon = "💰"
