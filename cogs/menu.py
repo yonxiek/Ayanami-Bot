@@ -336,11 +336,11 @@ class GitHubRepoModal(discord.ui.Modal, title="🐙 Репозиторий"):
                 "❌ Модуль недоступен.", ephemeral=True
             )
         if self.action == "commits":
-            await cog.github_commits.callback(cog, interaction, self.repo.value, 5)
+            await cog.github_commits(interaction, self.repo.value, 5)
         elif self.action == "pr":
-            await cog.github_pr.callback(cog, interaction, self.repo.value)
+            await cog.github_pr(interaction, self.repo.value)
         elif self.action == "issues":
-            await cog.github_issues.callback(cog, interaction, self.repo.value)
+            await cog.github_issues(interaction, self.repo.value)
 
 
 class RemindCreateModal(discord.ui.Modal, title="⏰ Создать напоминание"):
@@ -357,7 +357,7 @@ class RemindCreateModal(discord.ui.Modal, title="⏰ Создать напоми
             return await interaction.response.send_message(
                 "❌ Модуль недоступен.", ephemeral=True
             )
-        await cog.remind.callback(cog, interaction, self.время.value, self.текст.value)
+        await cog.remind(interaction, self.время.value, self.текст.value)
 
 
 class RemindRemoveModal(discord.ui.Modal, title="❌ Удалить напоминание"):
@@ -375,7 +375,7 @@ class RemindRemoveModal(discord.ui.Modal, title="❌ Удалить напоми
             remind_id = int(self.remind_id.value)
         except ValueError:
             return await interaction.response.send_message("❌ Укажите число.", ephemeral=True)
-        await cog.remind_remove.callback(cog, interaction, remind_id)
+        await cog.remind_remove(interaction, remind_id)
 
 
 # ─────────────────────────────────────────────
@@ -617,7 +617,7 @@ class CategoryView(discord.ui.View):
     async def _remind_list(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog("Reminders")
         if cog:
-            await cog.reminders.callback(cog, interaction)
+            await cog.reminders(interaction)
         else:
             await self._not_found(interaction, "Reminders")
 

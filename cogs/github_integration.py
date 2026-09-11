@@ -1,25 +1,24 @@
 
 import aiohttp
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 
 GITHUB_API = "https://api.github.com"
 
 
 class GitHubIntegration(commands.Cog):
-    """Интеграция с GitHub: отслеживание репозиториев, уведомления о коммитах и PR."""
+    """Интеграция с GitHub: отслеживание репозиториев, уведомления о коммитах и PR.
+
+    Публичные команды вынесены в `/menu` → GitHub; настройка отслеживания — в `/setup`.
+    """
 
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
 
-    @app_commands.command(name="github_commits", description="Последние коммиты репозитория")
-    @app_commands.describe(repo="Репозиторий (owner/name)", count="Количество (макс. 10)")
     async def github_commits(self, interaction: discord.Interaction, repo: str, count: int = 5):
         count = min(count, 10)
         await interaction.response.defer()
@@ -49,8 +48,6 @@ class GitHubIntegration(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="github_pr", description="Последние Pull Requests")
-    @app_commands.describe(repo="Репозиторий (owner/name)")
     async def github_pr(self, interaction: discord.Interaction, repo: str):
         await interaction.response.defer()
         async with aiohttp.ClientSession() as session:
@@ -77,8 +74,6 @@ class GitHubIntegration(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="github_issues", description="Последние Issues")
-    @app_commands.describe(repo="Репозиторий (owner/name)")
     async def github_issues(self, interaction: discord.Interaction, repo: str):
         await interaction.response.defer()
         async with aiohttp.ClientSession() as session:
@@ -107,22 +102,6 @@ class GitHubIntegration(commands.Cog):
             color=Colors.MAIN,
         )
         await interaction.followup.send(embed=embed)
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="github_commits")
-    async def github_commits_prefix(self, ctx, repo: str, count: int = 5):
-        await self.github_commits.callback(self, InteractionAdapter(ctx), repo, count)
-
-    @commands.command(name="github_pr")
-    async def github_pr_prefix(self, ctx, repo: str):
-        await self.github_pr.callback(self, InteractionAdapter(ctx), repo)
-
-    @commands.command(name="github_issues")
-    async def github_issues_prefix(self, ctx, repo: str):
-        await self.github_issues.callback(self, InteractionAdapter(ctx), repo)
 
 
 async def setup(bot):

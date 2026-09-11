@@ -3,11 +3,9 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 
 MAX_ACTIVE_REMINDERS = 25
@@ -98,8 +96,6 @@ class Reminders(commands.Cog):
             except Exception:
                 pass
 
-    @app_commands.command(name="remind", description="Напомнить через время (например: 10м, 2ч, 1д)")
-    @app_commands.describe(время="Через сколько: 30с / 10м / 2ч / 1д", текст="Что напомнить")
     async def remind(self, interaction: discord.Interaction, время: str, текст: str):
         if not interaction.guild:
             return
@@ -132,7 +128,6 @@ class Reminders(commands.Cog):
         )
         await award_reminder_achievement(interaction)
 
-    @app_commands.command(name="reminders", description="Список активных напоминаний")
     async def reminders(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         rows = await self.db.get_user_reminders(str(interaction.user.id))
@@ -146,29 +141,14 @@ class Reminders(commands.Cog):
             description="\n".join(lines[:25]),
             color=Colors.MAIN,
         )
-        embed.set_footer(text="Удалить: /remind_remove id")
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        embed.set_footer(text="Удалить: /menu → Напоминания → Удалить")
 
-    @app_commands.command(name="remind_remove", description="Удалить напоминание по ID")
-    @app_commands.describe(id="ID из /reminders")
     async def remind_remove(self, interaction: discord.Interaction, id: int):
         ok = await self.db.delete_reminder(id, str(interaction.user.id))
         if ok:
             await interaction.response.send_message(f"✅ Напоминание **#{id}** удалено.", ephemeral=True)
         else:
             await interaction.response.send_message(f"❌ Напоминание **#{id}** не найдено.", ephemeral=True)
-
-    @commands.command(name="reminders")
-    async def reminders_prefix(self, ctx):
-        await self.reminders.callback(self, InteractionAdapter(ctx))
-
-    @commands.command(name="remind")
-    async def remind_prefix(self, ctx, время: str, *, текст: str):
-        await self.remind.callback(self, InteractionAdapter(ctx), время, текст)
-
-    @commands.command(name="remind_remove")
-    async def remind_remove_prefix(self, ctx, id: int):
-        await self.remind_remove.callback(self, InteractionAdapter(ctx), id)
 
 
 async def award_reminder_achievement(interaction: discord.Interaction):
