@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
@@ -26,10 +26,13 @@ jobs:
           sudo apt-get install -y libjpeg-dev zlib1g-dev libfreetype6-dev
           pip install -r requirements-dev.txt
 
+      - name: Проверка загрузки когов
+        run: python load_check.py
+
       - name: Синтаксическая проверка
         run: |
           python -m compileall -q cogs
-          python -m compileall -q main.py db.py config.py ai_client.py prefix_adapter.py ui_components.py
+          python -m compileall -q main.py db.py config.py ai_client.py prefix_adapter.py ui_components.py load_check.py
 
       - name: Запуск тестов
         run: python -m pytest -q
