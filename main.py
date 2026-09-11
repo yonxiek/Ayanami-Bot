@@ -233,12 +233,16 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
         tb, f"Пользователь: {interaction.user} (id: {interaction.user.id})"
     )
     if not interaction.response.is_done():
-        embed = discord.Embed(
-            title="❌ Ошибка",
-            description=f"Произошла ошибка: {error}",
-            color=main_color,
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка: {error}",
+                color=main_color,
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except (discord.NotFound, discord.HTTPException):
+            # Интеракция уже истекла (например, команда слишком долго выполнялась) — ответить нечем.
+            pass
 
 
 @bot.event

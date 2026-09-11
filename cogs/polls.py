@@ -2,12 +2,10 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from cogs.achievements import award_achievement
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 
 OPTION_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
@@ -44,14 +42,6 @@ class Polls(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    @app_commands.command(name="poll", description="Создать голосование")
-    @app_commands.describe(
-        question="Вопрос голосования",
-        options="Варианты ответов через ;",
-        multi_select="Множественный выбор (да/нет)",
-        anonymous="Анонимное голосование (да/нет)",
-        duration="Длительность (например: 1ч, 1д, 30м)"
-    )
     async def poll(self, interaction: discord.Interaction, question: str, options: str,
                    multi_select: bool = False, anonymous: bool = False, duration: str = None):
         parts = [o.strip() for o in options.split(";") if o.strip()]
@@ -112,8 +102,6 @@ class Polls(commands.Cog):
         await interaction.response.send_message("✅ Голосование создано!", ephemeral=True)
         await award_achievement(self.db, str(interaction.guild.id), str(interaction.user.id), "first_poll", interaction.user)
 
-    @app_commands.command(name="poll_end", description="Завершить голосование")
-    @app_commands.describe(message_id="ID сообщения с голосованием")
     async def poll_end(self, interaction: discord.Interaction, message_id: str):
         cursor = await self.db.conn.execute(
             "SELECT id, question, options FROM polls WHERE guild_id = ? AND message_id = ? AND status = 'active'",
@@ -151,8 +139,6 @@ class Polls(commands.Cog):
         except Exception:
             pass
 
-    @app_commands.command(name="poll_results", description="Показать результаты голосования")
-    @app_commands.describe(message_id="ID сообщения с голосованием")
     async def poll_results(self, interaction: discord.Interaction, message_id: str):
         cursor = await self.db.conn.execute(
             "SELECT id, question, options FROM polls WHERE guild_id = ? AND message_id = ?",
@@ -259,22 +245,6 @@ class Polls(commands.Cog):
                  {"minutes": value} if unit == "m" else \
                  {"hours": value} if unit == "h" else {"days": value}
         return datetime.now(timezone.utc) + timedelta(**kwargs)
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="poll")
-    async def poll_prefix(self, ctx, question: str, *, options: str):
-        await self.poll.callback(self, InteractionAdapter(ctx), question, options)
-
-    @commands.command(name="poll_end")
-    async def poll_end_prefix(self, ctx, message_id: str):
-        await self.poll_end.callback(self, InteractionAdapter(ctx), message_id)
-
-    @commands.command(name="poll_results")
-    async def poll_results_prefix(self, ctx, message_id: str):
-        await self.poll_results.callback(self, InteractionAdapter(ctx), message_id)
 
 
 async def setup(bot):

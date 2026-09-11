@@ -380,6 +380,31 @@ class Moderation(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view)
 
+    async def remove_warn(self, interaction: discord.Interaction, member: discord.Member, warn_id: int):
+        """Снять предупреждение по ID (из /modmenu)."""
+        cursor = await self.db.conn.execute(
+            'SELECT id FROM warns WHERE id = ? AND guild_id = ? AND user_id = ?',
+            (warn_id, str(interaction.guild.id), str(member.id)))
+        row = await cursor.fetchone()
+        if not row:
+            return await interaction.response.send_message(
+                f"❌ Варн **#{warn_id}** не найден у этого участника.", ephemeral=True)
+
+        await self.db.conn.execute('DELETE FROM warns WHERE id = ?', (warn_id,))
+        await self.db.conn.commit()
+        await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unwarn", 1)
+        self.bot.dispatch("moderation_log", "unwarn", interaction.guild, member, interaction.user, reason=f"Снят варн #{warn_id}")
+
+        embed = discord.Embed(color=discord.Color(0x2ecc71))
+        embed.set_author(name="Снятие предупреждения")
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.add_field(name="Модератор", value=f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}", inline=False)
+        embed.add_field(name="Участник", value=f"{member.mention} {member.name} {member.id}", inline=False)
+        embed.add_field(name="Причина", value=f"Предупреждение #{warn_id} снято", inline=False)
+        embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="kick", description="Исключить участника с сервера")
     @app_commands.describe(member="Участник", reason="Причина исключения")
     @app_commands.default_permissions(kick_members=True)

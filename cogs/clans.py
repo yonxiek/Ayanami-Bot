@@ -1,12 +1,10 @@
 from datetime import datetime, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from cogs.achievements import award_achievement
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 
 
@@ -75,7 +73,6 @@ class Clans(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    @app_commands.command(name="clan_create", description="Создать клан (стоит 500 монет)")
     async def clan_create(self, interaction: discord.Interaction):
         user = await self.db.get_or_create_user(str(interaction.guild.id), str(interaction.user.id))
         if user.get("balance", 0) < 500:
@@ -83,8 +80,6 @@ class Clans(commands.Cog):
         await self.db.update_user_balance(str(interaction.guild.id), str(interaction.user.id), -500)
         await interaction.response.send_modal(ClanCreateModal(self))
 
-    @app_commands.command(name="clan_info", description="Информация о клане")
-    @app_commands.describe(clan_name="Название клана (или оставьте пустым для своего)")
     async def clan_info(self, interaction: discord.Interaction, clan_name: str = None):
         guild_id = str(interaction.guild.id)
         if clan_name:
@@ -132,8 +127,6 @@ class Clans(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="clan_join", description="Вступить в клан")
-    @app_commands.describe(clan_name="Название клана")
     async def clan_join(self, interaction: discord.Interaction, clan_name: str):
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
@@ -142,7 +135,7 @@ class Clans(commands.Cog):
             "SELECT clan_id FROM clan_members WHERE guild_id = ? AND user_id = ?", (guild_id, user_id)
         )
         if await cursor.fetchone():
-            return await interaction.response.send_message("❌ Вы уже в клане. Сначала `/clan_leave`.", ephemeral=True)
+            return await interaction.response.send_message("❌ Вы уже в клане. Покиньте его через **/menu → Кланы**.", ephemeral=True)
 
         cursor = await self.db.conn.execute(
             "SELECT id FROM clans WHERE guild_id = ? AND name = ?", (guild_id, clan_name)
@@ -159,7 +152,6 @@ class Clans(commands.Cog):
         await interaction.response.send_message(f"✅ Вы вступили в клан **{clan_name}**!")
         await award_achievement(self.db, guild_id, user_id, "clan_join", interaction.user)
 
-    @app_commands.command(name="clan_leave", description="Покинуть клан")
     async def clan_leave(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
@@ -181,7 +173,6 @@ class Clans(commands.Cog):
         await self.db.conn.commit()
         await interaction.response.send_message(f"✅ Вы покинули клан **{row['name']}**.")
 
-    @app_commands.command(name="clan_top", description="Топ кланов сервера")
     async def clan_top(self, interaction: discord.Interaction):
         cursor = await self.db.conn.execute(
             "SELECT c.name, c.tag, c.level, c.balance, "
@@ -202,9 +193,7 @@ class Clans(commands.Cog):
         embed = discord.Embed(title="⚔️ Топ кланов", description="\n".join(lines), color=Colors.MAIN)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="clan_pay", description="Пополнить баланс клана")
-    @app_commands.describe(amount="Количество монет")
-    async def clan_pay(self, interaction: discord.Interaction, amount: int):
+    async def clan_pay(self, interaction: discord.Interaction, amount: int = 100):
         if amount <= 0:
             return await interaction.response.send_message("❌ Сумма должна быть положительной.", ephemeral=True)
 
@@ -231,13 +220,11 @@ class Clans(commands.Cog):
         await self.db.conn.commit()
         await interaction.response.send_message(f"✅ Вы пополнили баланс клана **{row['name']}** на **{amount}** монет.")
 
-    @app_commands.command(name="clan_role", description="Назначить роль в клане (лидер)")
-    @app_commands.describe(member="Участник", role="Роль: officer или member")
-    @app_commands.choices(role=[
-        app_commands.Choice(name="Офицер", value="officer"),
-        app_commands.Choice(name="Участник", value="member"),
-    ])
-    async def clan_role(self, interaction: discord.Interaction, member: discord.Member, role: app_commands.Choice[str]):
+    async def clan_role(self, interaction: discord.Interaction, member: discord.Member, role: str):
+        """Назначить роль в клане (лидер). role: officer | member."""
+        if role not in ("officer", "member"):
+            return await interaction.response.send_message("❌ Роль: `officer` или `member`.", ephemeral=True)
+
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
 
@@ -258,38 +245,11 @@ class Clans(commands.Cog):
 
         await self.db.conn.execute(
             "UPDATE clan_members SET role = ? WHERE guild_id = ? AND user_id = ?",
-            (role.value, guild_id, str(member.id))
+            (role, guild_id, str(member.id))
         )
         await self.db.conn.commit()
-        await interaction.response.send_message(f"✅ Роль **{role.name}** назначена {member.mention}.")
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="clan_create")
-    async def clan_create_prefix(self, ctx):
-        await self.clan_create.callback(self, InteractionAdapter(ctx))
-
-    @commands.command(name="clan_info")
-    async def clan_info_prefix(self, ctx, clan_name: str = None):
-        await self.clan_info.callback(self, InteractionAdapter(ctx), clan_name)
-
-    @commands.command(name="clan_join")
-    async def clan_join_prefix(self, ctx, *, clan_name: str):
-        await self.clan_join.callback(self, InteractionAdapter(ctx), clan_name)
-
-    @commands.command(name="clan_leave")
-    async def clan_leave_prefix(self, ctx):
-        await self.clan_leave.callback(self, InteractionAdapter(ctx))
-
-    @commands.command(name="clan_top")
-    async def clan_top_prefix(self, ctx):
-        await self.clan_top.callback(self, InteractionAdapter(ctx))
-
-    @commands.command(name="clan_pay")
-    async def clan_pay_prefix(self, ctx, amount: int):
-        await self.clan_pay.callback(self, InteractionAdapter(ctx), amount)
+        role_name = "Офицер" if role == "officer" else "Участник"
+        await interaction.response.send_message(f"✅ Роль **{role_name}** назначена {member.mention}.")
 
 
 async def setup(bot):

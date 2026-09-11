@@ -307,7 +307,10 @@ class Economy(VoiceTrackerMixin, commands.Cog):
     @app_commands.command(name="give", description="Выдать монетки")
     @app_commands.default_permissions(administrator=True)
     async def give_slash(self, interaction: discord.Interaction, amount: int, users: str):
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
+        except (discord.NotFound, discord.HTTPException):
+            return
         mentions = []
         for word in users.split():
             clean_id = re.sub(r'\D', '', word)
@@ -323,7 +326,10 @@ class Economy(VoiceTrackerMixin, commands.Cog):
     @app_commands.command(name="remove", description="Забрать монетки у пользователей")
     @app_commands.default_permissions(administrator=True)
     async def remove_slash(self, interaction: discord.Interaction, amount: int, users: str):
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
+        except (discord.NotFound, discord.HTTPException):
+            return
         mentions = []
         for word in users.split():
             clean_id = re.sub(r'\D', '', word)

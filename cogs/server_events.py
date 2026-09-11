@@ -1,12 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from cogs.achievements import award_achievement
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 
 
@@ -41,13 +39,6 @@ class ServerEvents(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    @app_commands.command(name="event_create", description="Создать событие")
-    @app_commands.describe(
-        name="Название события",
-        description="Описание",
-        time="Время начала (дд.мм чч:мм или через durée)",
-        channel="Канал для напоминания"
-    )
     async def event_create(self, interaction: discord.Interaction, name: str, description: str = "",
                            time: str = None, channel: discord.TextChannel = None):
         target_channel = channel or interaction.channel
@@ -97,27 +88,50 @@ class ServerEvents(commands.Cog):
         await interaction.response.send_message(f"✅ Событие создано в {target_channel.mention}!", ephemeral=True)
         await award_achievement(self.db, str(interaction.guild.id), str(interaction.user.id), "first_event", interaction.user)
 
-    @app_commands.command(name="event_list", description="Список активных событий")
     async def event_list(self, interaction: discord.Interaction):
+        """Список событий: предстоящие и последние прошедшие."""
         cursor = await self.db.conn.execute(
             "SELECT id, name, starts_at, creator_id, status FROM server_events "
-            "WHERE guild_id = ? AND status = 'active' ORDER BY starts_at",
+            "WHERE guild_id = ? ORDER BY starts_at DESC LIMIT 25",
             (str(interaction.guild.id),)
         )
         rows = await cursor.fetchall()
         if not rows:
-            return await interaction.response.send_message("📭 Активных событий нет.", ephemeral=True)
+            return await interaction.response.send_message("📭 Событий ещё нет. Создайте первое!", ephemeral=True)
+
+        now = datetime.now(timezone.utc)
+        upcoming, past = [], []
+        for r in rows:
+            if r["starts_at"]:
+                starts = datetime.fromisoformat(r["starts_at"])
+                if starts >= now and r["status"] == "active":
+                    upcoming.append((r, starts))
+                elif starts < now:
+                    past.append((r, starts))
+            else:
+                upcoming.append((r, None))
+
+        upcoming.sort(key=lambda x: x[1] or datetime.max)
+        past.sort(key=lambda x: x[1] or datetime.min, reverse=True)
+
+        def fmt_event(r, starts):
+            time_text = f"<t:{int(starts.timestamp())}:F>" if starts else "Без даты"
+            status = "❌ отменено" if r["status"] == "cancelled" else ""
+            return f"**{r['name']}** — {time_text} (от: <@{r['creator_id']}>) {status}".rstrip()
 
         lines = []
-        for r in rows:
-            time_text = f"<t:{int(datetime.fromisoformat(r['starts_at']).timestamp())}:R>" if r["starts_at"] else "Без даты"
-            lines.append(f"**{r['name']}** — {time_text} (организатор: <@{r['creator_id']}>)")
+        if upcoming:
+            lines.append("### 📅 Предстоящие")
+            lines.extend(f"{fmt_event(r, s)} [`#{r['id']}`]" for r, s in upcoming[:5])
+        if past:
+            lines.append("\n### 🕰️ Прошедшие")
+            lines.extend(f"`{discord.utils.format_dt(s, style='d')}` **{r['name']}** [`#{r['id']}`]" for r, s in past[:5])
+        if not lines:
+            lines.append("Нет событий для показа.")
 
-        embed = discord.Embed(title="🎉 Активные события", description="\n".join(lines), color=Colors.MAIN)
+        embed = discord.Embed(title="🎉 События сервера", description="\n".join(lines), color=Colors.MAIN)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="event_cancel", description="Отменить событие")
-    @app_commands.describe(event_id="ID события")
     async def event_cancel(self, interaction: discord.Interaction, event_id: int):
         cursor = await self.db.conn.execute(
             "SELECT creator_id, name FROM server_events WHERE id = ? AND guild_id = ?",
@@ -195,22 +209,6 @@ class ServerEvents(commands.Cog):
             return result
         except (ValueError, IndexError):
             return None
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="event_create")
-    async def event_create_prefix(self, ctx, name: str, description: str = "", time: str = None):
-        await self.event_create.callback(self, InteractionAdapter(ctx), name, description, time)
-
-    @commands.command(name="event_list")
-    async def event_list_prefix(self, ctx):
-        await self.event_list.callback(self, InteractionAdapter(ctx))
-
-    @commands.command(name="event_cancel")
-    async def event_cancel_prefix(self, ctx, event_id: int):
-        await self.event_cancel.callback(self, InteractionAdapter(ctx), event_id)
 
 
 async def setup(bot):

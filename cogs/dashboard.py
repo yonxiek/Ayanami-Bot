@@ -3384,10 +3384,9 @@ class SetupClansView(discord.ui.View):
             f"**Участников в кланах:** {member_count}",
             "",
             "**Для пользователей:**",
-            "• `/clan_create` — создать клан (500 монет)",
-            "• `/clan_join`, `/clan_leave`, `/clan_info`",
-            "• `/clan_pay` — пополнить казну",
-            "• `/clan_top` — топ кланов",
+            "• `/menu` → раздел **Кланы**: создать клан (500 монет)",
+            "• в разделе: вступить, покинуть, мой клан, топ",
+            "• `Казну` — пополнить казну, `Роли` — назначить (лидер)",
         ]
         embed = discord.Embed(title="⚔️ Кланы — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
@@ -3440,9 +3439,8 @@ class SetupCardsView(discord.ui.View):
             "• `drop_rate` — шанс выпадения (0.01–1.0)",
             "",
             "**Для игроков:**",
-            "• `/card_drop` — выбросить карточку (кулдаун 5 мин)",
-            "• `/card_inventory` — коллекция",
-            "• `/card_give` — передать игроку",
+            "• `/menu` → раздел **Карточки**: выбросить (кулдаун 5 мин)",
+            "• в разделе: коллекция, передать другому игроку",
             "• `/shop buy` и `/sell_card` — купить/продать карточки",
         ]
         embed = discord.Embed(title="🃏 Карточки — настройки", description="\n".join(lines), color=Colors.MAIN)
@@ -3619,7 +3617,7 @@ class SetupGithubView(discord.ui.View):
         embed = discord.Embed(title="🐙 GitHub — отслеживание", description="\n".join(lines), color=Colors.MAIN)
         embed.add_field(
             name="Публичные команды",
-            value="`/github_commits`, `/github_pr`, `/github_issues`",
+            value="`/menu` → раздел **GitHub**: коммиты, PR, Issues",
             inline=False,
         )
         embed.set_footer(text="Ayanami System")

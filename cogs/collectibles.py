@@ -1,13 +1,12 @@
 import random
+import time
 from datetime import datetime, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from cogs.achievements import award_achievement
 from db import Database
-from prefix_adapter import InteractionAdapter
 from ui_components import Colors
 
 RARITY_CONFIG = {
@@ -17,6 +16,8 @@ RARITY_CONFIG = {
     "legendary": {"color": 0xf39c12, "label": "Легендарная", "emoji": "🟡"},
 }
 
+CARD_DROP_CD = 300
+
 
 class Collectibles(commands.Cog):
     """Система коллекционных карточек."""
@@ -24,6 +25,17 @@ class Collectibles(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
+        self._drop_cooldowns: dict[tuple[int, int], float] = {}
+
+    def _drop_remaining(self, guild_id: int, user_id: int) -> float:
+        now = time.monotonic()
+        key = (guild_id, user_id)
+        last = self._drop_cooldowns.get(key, 0.0)
+        remaining = last + CARD_DROP_CD - now
+        if remaining > 0:
+            return remaining
+        self._drop_cooldowns[key] = now
+        return 0.0
 
     async def _add_card(self, interaction: discord.Interaction, card_id: str, name: str,
                         rarity: str, emoji: str = "🃏",
@@ -39,9 +51,13 @@ class Collectibles(commands.Cog):
         r_info = RARITY_CONFIG[rarity]
         return f"{r_info['emoji']} Карточка **{name}** [{r_info['label']}] добавлена! (шанс: {drop_rate:.0%})"
 
-    @app_commands.command(name="card_drop", description="Выбросить случайную карточку")
-    @app_commands.checks.cooldown(1, 300, key=lambda i: (i.guild_id, i.user.id))
     async def card_drop(self, interaction: discord.Interaction):
+        remaining = self._drop_remaining(interaction.guild.id, interaction.user.id)
+        if remaining > 0:
+            return await interaction.response.send_message(
+                f"⏳ Кулдаун ещё идёт. Попробуйте через **{int(round(remaining))}** сек.",
+                ephemeral=True,
+            )
         await interaction.response.defer()
         guild_id = str(interaction.guild.id)
 
@@ -96,7 +112,6 @@ class Collectibles(commands.Cog):
         if await self.db.count_unique_cards(guild_id, user_id) >= 10:
             await award_achievement(self.db, guild_id, user_id, "cards_10", interaction.user)
 
-    @app_commands.command(name="card_inventory", description="Моя коллекция карточек")
     async def card_inventory(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
         guild_id = str(interaction.guild.id)
@@ -127,8 +142,6 @@ class Collectibles(commands.Cog):
         embed.set_thumbnail(url=target.display_avatar.url)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="card_give", description="Передать карточку другому игроку")
-    @app_commands.describe(member="Получатель", card_id="ID карточки", amount="Количество")
     async def card_give(self, interaction: discord.Interaction, member: discord.Member, card_id: str, amount: int = 1):
         if member.id == interaction.user.id:
             return await interaction.response.send_message("❌ Нельзя передать себе.", ephemeral=True)
@@ -159,22 +172,6 @@ class Collectibles(commands.Cog):
         )
         await self.db.conn.commit()
         await interaction.response.send_message(f"✅ Передано **{amount}** карточек `{card_id}` -> {member.mention}")
-
-    # ==========================================================
-    #                ПРЕФИКСНЫЕ КОМАНДЫ
-    # ==========================================================
-
-    @commands.command(name="card_drop")
-    async def card_drop_prefix(self, ctx):
-        await self.card_drop.callback(self, InteractionAdapter(ctx))
-
-    @commands.command(name="card_inventory")
-    async def card_inventory_prefix(self, ctx, member: discord.Member = None):
-        await self.card_inventory.callback(self, InteractionAdapter(ctx), member)
-
-    @commands.command(name="card_give")
-    async def card_give_prefix(self, ctx, member: discord.Member, card_id: str, amount: int = 1):
-        await self.card_give.callback(self, InteractionAdapter(ctx), member, card_id, amount)
 
 
 async def setup(bot):
