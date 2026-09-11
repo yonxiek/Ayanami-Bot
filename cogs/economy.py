@@ -8,24 +8,20 @@ from db import Database
 from datetime import datetime
 from ui_components import Icons, Colors, AyanamiUI
 import config
+from voice_tracker import VoiceTrackerMixin
 
 
 
-class Economy(commands.Cog):
+class Economy(VoiceTrackerMixin, commands.Cog):
     def __init__(self, bot):
+        super().__init__(bot)
         self.bot = bot
         self.db = Database()
-        self.voice_sessions = {}
         self.bloxlink_api_key = config.BLOXLINK_API_KEY
         self.SNIPE_WEBHOOK_URL = config.SNIPE_WEBHOOK_URL
 
     async def cog_load(self):
-        for guild in self.bot.guilds:
-            for vc in guild.voice_channels:
-                for member in vc.members:
-                    if not member.bot:
-                        session_key = f"{guild.id}_{member.id}"
-                        self.voice_sessions[session_key] = discord.utils.utcnow()
+        self.restore_voice_sessions(self.bot)
 
     async def fetch_roblox_data_from_api(self, guild_id: int, user_id: int) -> Optional[dict]:
         url = f"https://api.blox.link/v4/public/guilds/{guild_id}/discord-to-roblox/{user_id}"
@@ -68,31 +64,27 @@ class Economy(commands.Cog):
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.bot: return
-        session_key = f"{member.guild.id}_{member.id}"
         if before.channel is None and after.channel is not None:
-            self.voice_sessions[session_key] = discord.utils.utcnow()
+            self.track_voice_join(member.guild.id, member.id)
             await self.db.update_activity(str(member.guild.id), str(member.id), "voice_join")
         elif before.channel is not None and after.channel is None:
-            start_time = self.voice_sessions.pop(session_key, None)
-            if start_time:
-                duration = (discord.utils.utcnow() - start_time).total_seconds()
-                minutes = int(duration / 60)
-                if minutes > 0:
-                    guild_id, user_id = str(member.guild.id), str(member.id)
-                    await self.db.create_user(guild_id, user_id)
-                    await self.db.conn.execute('UPDATE users SET total_voice_minutes = total_voice_minutes + ? WHERE guild_id = ? AND user_id = ?', (minutes, guild_id, user_id))
-                    await self.db.conn.commit()
-                    try:
-                        cursor = await self.db.conn.execute('SELECT total_voice_minutes FROM users WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
-                        row = await cursor.fetchone()
-                        total_voice = row['total_voice_minutes'] if row else 0
-                        from cogs.achievements import award_achievement
-                        if total_voice >= 60:
-                            await award_achievement(self.db, guild_id, user_id, "voice_60", member)
-                        if total_voice >= 300:
-                            await award_achievement(self.db, guild_id, user_id, "voice_300", member)
-                    except Exception:
-                        pass
+            minutes, _ = self.track_voice_leave(member.guild.id, member.id)
+            if minutes > 0:
+                guild_id, user_id = str(member.guild.id), str(member.id)
+                await self.db.create_user(guild_id, user_id)
+                await self.db.conn.execute('UPDATE users SET total_voice_minutes = total_voice_minutes + ? WHERE guild_id = ? AND user_id = ?', (minutes, guild_id, user_id))
+                await self.db.conn.commit()
+                try:
+                    cursor = await self.db.conn.execute('SELECT total_voice_minutes FROM users WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+                    row = await cursor.fetchone()
+                    total_voice = row['total_voice_minutes'] if row else 0
+                    from cogs.achievements import award_achievement
+                    if total_voice >= 60:
+                        await award_achievement(self.db, guild_id, user_id, "voice_60", member)
+                    if total_voice >= 300:
+                        await award_achievement(self.db, guild_id, user_id, "voice_300", member)
+                except Exception:
+                    pass
 
     def format_time(self, minutes: int) -> str:
         if minutes < 60: return f"{minutes} мин."
@@ -126,9 +118,8 @@ class Economy(commands.Cog):
         total_commands = data.get('total_commands', 0)
         level = data.get('level', 1)
         exp = data.get('exp', 0)
-        session_key = f"{interaction.guild.id}_{target.id}"
-        if session_key in self.voice_sessions:
-            ongoing = int((discord.utils.utcnow() - self.voice_sessions[session_key]).total_seconds() / 60)
+        ongoing = self.get_ongoing_minutes(interaction.guild.id, target.id)
+        if ongoing:
             total_voice += ongoing
 
         activities = await self.db.get_user_activities(str(interaction.guild.id), str(target.id))

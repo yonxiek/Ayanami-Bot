@@ -3,13 +3,14 @@ from discord.ext import commands
 from datetime import datetime, timezone, timedelta
 from db import Database
 from ui_components import Icons
+from voice_tracker import VoiceTrackerMixin
 
 
-class Logging(commands.Cog):
+class Logging(VoiceTrackerMixin, commands.Cog):
     def __init__(self, bot):
+        super().__init__(bot)
         self.bot = bot
         self.db = Database()
-        self.voice_sessions = {}  # {guild_id: {user_id: datetime}}
         self._log_cache = {}  # {(guild_id, event_key, user_id): datetime} — дедупликация
         self._cache_ttl = timedelta(seconds=5)  # окно дедупликации
 
@@ -505,7 +506,7 @@ class Logging(commands.Cog):
         user_id = member.id
 
         if not before.channel and after.channel:
-            self.voice_sessions.setdefault(guild_id, {})[user_id] = datetime.now(timezone.utc)
+            self.track_voice_join(guild_id, user_id)
             if not await self.is_event_enabled(guild_id, "voice_connect"):
                 return
             embed = discord.Embed(title="Voice Connected", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
@@ -517,18 +518,16 @@ class Logging(commands.Cog):
 
         elif before.channel and not after.channel:
             duration_text = ""
-            sessions = self.voice_sessions.get(guild_id, {})
-            start_time = sessions.pop(user_id, None)
+            minutes, start_time = self.track_voice_leave(guild_id, user_id)
             if start_time:
-                delta = datetime.now(timezone.utc) - start_time
-                total_seconds = int(delta.total_seconds())
+                total_seconds = int((datetime.now(timezone.utc) - start_time).total_seconds())
                 hours, remainder = divmod(total_seconds, 3600)
-                minutes, seconds = divmod(remainder, 60)
+                mins, seconds = divmod(remainder, 60)
                 parts = []
                 if hours:
                     parts.append(f"{hours}h")
-                if minutes:
-                    parts.append(f"{minutes}m")
+                if mins:
+                    parts.append(f"{mins}m")
                 parts.append(f"{seconds}s")
                 duration_text = " ".join(parts)
 

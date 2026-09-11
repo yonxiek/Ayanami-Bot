@@ -405,17 +405,6 @@ class Database:
 
         await self.conn.commit()
 
-    async def mark_raid_attendance(self, guild_id: str, user_id: str, raid_msg_id: str) -> bool:
-        """Пытается засчитать рейд участнику. Возвращает True, если очко выдано, False - если уже было."""
-        try:
-            await self.conn.execute('INSERT INTO raid_attendance (raid_msg_id, user_id) VALUES (?, ?)', (raid_msg_id, user_id))
-            await self.create_user(guild_id, user_id)
-            await self.conn.execute('UPDATE users SET raids_attended = raids_attended + 1 WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
-            await self.conn.commit()
-            return True
-        except Exception:
-            return False
-
     async def create_user(self, guild_id: str, user_id: str):
         await self.conn.execute('INSERT OR IGNORE INTO users (guild_id, user_id, joined_at) VALUES (?, ?, ?)',
                                 (guild_id, user_id, datetime.now(timezone.utc).isoformat()))
@@ -504,28 +493,12 @@ class Database:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
-    async def expire_old_warnings(self):
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        await self.conn.execute(
-            'UPDATE security_warnings SET active = 0 WHERE active = 1 AND expires_at <= ?',
-            (now,)
-        )
-        await self.conn.commit()
-
     async def clear_user_warnings(self, guild_id: str, user_id: str):
         await self.conn.execute(
             'UPDATE security_warnings SET active = 0 WHERE guild_id = ? AND user_id = ? AND active = 1',
             (guild_id, user_id)
         )
         await self.conn.commit()
-
-    async def get_warning_history(self, guild_id: str, user_id: str, limit: int = 10):
-        cursor = await self.db.conn.execute(
-            'SELECT id, reason, issued_at, expires_at, active FROM security_warnings WHERE guild_id = ? AND user_id = ? ORDER BY issued_at DESC LIMIT ?',
-            (guild_id, user_id, limit)
-        )
-        return await cursor.fetchall()
 
     # ==========================================
     #     DAILY QUESTS
@@ -559,36 +532,6 @@ class Database:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def update_quest_progress(self, guild_id: str, user_id: str, quest_id: str, amount: int = 1):
-        await self.conn.execute('''
-            INSERT INTO user_quests (guild_id, user_id, quest_id, progress, completed, claimed, last_reset)
-            VALUES (?, ?, ?, ?, 0, 0, ?)
-            ON CONFLICT(guild_id, user_id, quest_id) DO UPDATE SET progress = progress + ?
-        ''', (guild_id, user_id, quest_id, amount, datetime.now(timezone.utc).isoformat(), amount))
-        await self.conn.commit()
-
-    async def claim_quest_reward(self, guild_id: str, user_id: str, quest_id: str) -> bool:
-        cursor = await self.conn.execute(
-            'SELECT completed, claimed FROM user_quests WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
-            (guild_id, user_id, quest_id)
-        )
-        row = await cursor.fetchone()
-        if not row or not row['completed'] or row['claimed']:
-            return False
-        await self.conn.execute(
-            'UPDATE user_quests SET claimed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
-            (guild_id, user_id, quest_id)
-        )
-        await self.conn.commit()
-        return True
-
-    async def complete_quest(self, guild_id: str, user_id: str, quest_id: str):
-        await self.conn.execute(
-            'UPDATE user_quests SET completed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
-            (guild_id, user_id, quest_id)
-        )
-        await self.conn.commit()
-
     async def reset_daily_quests(self, guild_id: str):
         await self.conn.execute(
             'UPDATE user_quests SET progress = 0, completed = 0, claimed = 0, last_reset = ? WHERE guild_id = ?',
@@ -619,7 +562,10 @@ class Database:
             if not user_quest['completed']:
                 new_progress = user_quest['progress'] + amount
                 if new_progress >= target:
-                    await self.complete_quest(guild_id, user_id, quest_id)
+                    await self.conn.execute(
+                        'UPDATE user_quests SET completed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
+                        (guild_id, user_id, quest_id)
+                    )
                     await self.update_user_balance(guild_id, user_id, row['reward'])
                     await self.conn.execute(
                         'UPDATE user_quests SET claimed = 1 WHERE guild_id = ? AND user_id = ? AND quest_id = ?',
@@ -854,17 +800,6 @@ class Database:
             'old_level': old_level,
         }
 
-    async def get_user_level(self, guild_id: str, user_id: str) -> dict:
-        await self.create_user(guild_id, user_id)
-        cursor = await self.conn.execute(
-            'SELECT exp, level FROM users WHERE guild_id = ? AND user_id = ?',
-            (guild_id, user_id)
-        )
-        row = await cursor.fetchone()
-        if not row:
-            return {'exp': 0, 'level': 1}
-        return dict(row)
-
     async def get_level_roles(self, guild_id: str) -> list:
         cursor = await self.conn.execute(
             'SELECT level, role_id FROM level_roles WHERE guild_id = ? ORDER BY level',
@@ -879,35 +814,12 @@ class Database:
         )
         await self.conn.commit()
 
-    async def remove_level_role(self, guild_id: str, level: int):
-        await self.conn.execute(
-            'DELETE FROM level_roles WHERE guild_id = ? AND level = ?',
-            (guild_id, level)
-        )
-        await self.conn.commit()
-
     async def get_top_users_by_level(self, guild_id: str, limit: int = 10) -> list:
         cursor = await self.conn.execute(
             'SELECT user_id, exp, level FROM users WHERE guild_id = ? ORDER BY exp DESC LIMIT ?',
             (guild_id, limit)
         )
         return [dict(row) for row in await cursor.fetchall()]
-
-    async def get_xp_cooldown(self, guild_id: str, user_id: str) -> str:
-        cursor = await self.conn.execute(
-            'SELECT last_xp_time FROM users WHERE guild_id = ? AND user_id = ?',
-            (guild_id, user_id)
-        )
-        row = await cursor.fetchone()
-        return row['last_xp_time'] if row else None
-
-    async def set_xp_cooldown(self, guild_id: str, user_id: str):
-        from datetime import datetime, timezone
-        await self.conn.execute(
-            'UPDATE users SET last_xp_time = ? WHERE guild_id = ? AND user_id = ?',
-            (datetime.now(timezone.utc).isoformat(), guild_id, user_id)
-        )
-        await self.conn.commit()
 
     # ==========================================
     #     SHOP

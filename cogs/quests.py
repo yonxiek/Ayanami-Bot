@@ -5,15 +5,16 @@ from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta
 from db import Database
 from ui_components import Icons, Colors, AyanamiUI
+from voice_tracker import VoiceTrackerMixin
 
 
 
-class Quests(commands.Cog):
+class Quests(VoiceTrackerMixin, commands.Cog):
 
     def __init__(self, bot):
+        super().__init__(bot)
         self.bot = bot
         self.db = Database()
-        self.voice_sessions = {}
         self.daily_reset.start()
         self.random_quest_rotation.start()
 
@@ -199,22 +200,20 @@ class Quests(commands.Cog):
         guild_id = member.guild.id
         user_id = member.id
         if before.channel is None and after.channel is not None:
-            self.voice_sessions.setdefault(guild_id, {})[user_id] = datetime.now(timezone.utc)
+            self.track_voice_join(guild_id, user_id)
         elif before.channel is not None and after.channel is None:
-            start_time = self.voice_sessions.get(guild_id, {}).pop(user_id, None)
-            if start_time:
-                minutes = int((datetime.now(timezone.utc) - start_time).total_seconds() / 60)
-                if minutes > 0:
-                    completed = await self.db.increment_quest_progress(str(guild_id), str(user_id), "voice_join", minutes)
-                    if completed:
-                        await self._award_quest_achievements(str(guild_id), str(user_id), member)
-                        for q in completed:
-                            try:
-                                await member.send(
-                                    f"🎁 Квест **{q['name']}** выполнен! Награда **{q['reward']}** {AyanamiUI.E_RP} автоматически начислена."
-                                )
-                            except discord.Forbidden:
-                                pass
+            minutes, _ = self.track_voice_leave(guild_id, user_id)
+            if minutes > 0:
+                completed = await self.db.increment_quest_progress(str(guild_id), str(user_id), "voice_join", minutes)
+                if completed:
+                    await self._award_quest_achievements(str(guild_id), str(user_id), member)
+                    for q in completed:
+                        try:
+                            await member.send(
+                                f"🎁 Квест **{q['name']}** выполнен! Награда **{q['reward']}** {AyanamiUI.E_RP} автоматически начислена."
+                            )
+                        except discord.Forbidden:
+                            pass
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction: discord.Interaction, command):

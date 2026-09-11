@@ -111,10 +111,26 @@ class Permissions(commands.Cog):
         self.db = Database()
         self.COG_RU = {
             "Moderation": "🛡️ Модерация",
-            "Economy": "💰 Рейды и Экономика",
+            "Economy": "💰 Экономика",
             "Utils": "🛠️ Утилиты",
             "Dashboard": "⚙️ Настройки",
-            "Permissions": "🔒 Права"
+            "Permissions": "🔒 Права",
+            "MiniGames": "🎮 Мини-игры",
+            "Shop": "🛒 Магазин",
+            "Quests": "📜 Квесты",
+            "Achievements": "🏆 Достижения",
+            "Reminders": "⏰ Напоминания",
+            "Duels": "⚔️ Дуэли",
+            "WeeklyStats": "📈 Статистика",
+            "AIImageGeneration": "🤖 ИИ",
+            "Clans": "⚔️ Кланы",
+            "Collectibles": "🃏 Карточки",
+            "GitHubIntegration": "🐙 GitHub",
+            "Music": "🎵 Музыка",
+            "Polls": "🗳️ Голосования",
+            "ServerEvents": "🎉 События",
+            "AIModeration": "🛡️ ИИ-модерация",
+            "Tickets": "📩 Тикеты",
         }
 
     async def cog_load(self):

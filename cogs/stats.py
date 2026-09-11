@@ -7,6 +7,7 @@ from discord import app_commands
 from db import Database
 from prefix_adapter import InteractionAdapter
 from ui_components import Colors
+from voice_tracker import VoiceTrackerMixin
 
 
 def current_week_key() -> str:
@@ -14,11 +15,11 @@ def current_week_key() -> str:
     return f"{iso[0]}-W{iso[1]:02d}"
 
 
-class WeeklyStats(commands.Cog):
+class WeeklyStats(VoiceTrackerMixin, commands.Cog):
     def __init__(self, bot):
+        super().__init__(bot)
         self.bot = bot
         self.db = Database()
-        self.voice_sessions = {}
 
     async def cog_load(self):
         try:
@@ -30,16 +31,9 @@ class WeeklyStats(commands.Cog):
         if hasattr(self, "bg_task"):
             self.bg_task.cancel()
 
-    async def cog_load_sessions(self):
-        for guild in self.bot.guilds:
-            for vc in guild.voice_channels:
-                for member in vc.members:
-                    if not member.bot:
-                        self.voice_sessions[f"{guild.id}_{member.id}"] = datetime.now(timezone.utc)
-
     async def _prune_loop(self):
         await self.bot.wait_until_ready()
-        await self.cog_load_sessions()
+        self.restore_voice_sessions(self.bot)
         while not self.bot.is_closed():
             try:
                 await self.db.prune_weekly_stats()
@@ -58,15 +52,12 @@ class WeeklyStats(commands.Cog):
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.bot:
             return
-        key = f"{member.guild.id}_{member.id}"
         if before.channel is None and after.channel is not None:
-            self.voice_sessions[key] = datetime.now(timezone.utc)
+            self.track_voice_join(member.guild.id, member.id)
         elif before.channel is not None and after.channel is None:
-            start = self.voice_sessions.pop(key, None)
-            if start:
-                minutes = int((datetime.now(timezone.utc) - start).total_seconds() / 60)
-                if minutes > 0:
-                    await self.db.increment_weekly(str(member.guild.id), str(member.id), current_week_key(), "voice_minutes", minutes)
+            minutes, _ = self.track_voice_leave(member.guild.id, member.id)
+            if minutes > 0:
+                await self.db.increment_weekly(str(member.guild.id), str(member.id), current_week_key(), "voice_minutes", minutes)
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction: discord.Interaction, command):
