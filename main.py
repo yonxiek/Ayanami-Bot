@@ -60,6 +60,7 @@ async def on_error(event, *args, **kwargs):
 
 @bot.event
 async def on_ready():
+    bot.start_time = discord.utils.utcnow()
     print(f"Бот {bot.user} успешно запущен!")
     print("Начинаем инициализацию БД...")
     try:

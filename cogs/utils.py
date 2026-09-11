@@ -6,6 +6,7 @@ import asyncio
 import aiohttp
 import re
 import json
+import platform
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from db import Database
@@ -466,7 +467,44 @@ class Utils(commands.Cog):
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="roblox", description="\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u043f\u043e\u0434\u0440\u043e\u0431\u043d\u044b\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c Roblox \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0430")
+    @app_commands.command(name="botinfo", description="Информация о боте")
+    async def botinfo(self, interaction: discord.Interaction):
+        uptime = datetime.now(timezone.utc) - self.bot.start_time
+        total_seconds = int(uptime.total_seconds())
+        days, rem = divmod(total_seconds, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        uptime_parts = []
+        if days:
+            uptime_parts.append(f"{days} {AyanamiUI.get_plural(days, 'день', 'дня', 'дней')}")
+        if hours:
+            uptime_parts.append(f"{hours} {AyanamiUI.get_plural(hours, 'час', 'часа', 'часов')}")
+        if minutes:
+            uptime_parts.append(f"{minutes} {AyanamiUI.get_plural(minutes, 'минута', 'минуты', 'минут')}")
+        if not uptime_parts:
+            uptime_parts.append(f"{seconds} {AyanamiUI.get_plural(seconds, 'секунда', 'секунды', 'секунд')}")
+        uptime_text = " ".join(uptime_parts)
+
+        member_count = sum(g.member_count or 0 for g in self.bot.guilds)
+        command_count = len(self.bot.tree.get_commands())
+
+        embed = discord.Embed(
+            title=f"🤖 {self.bot.user.name} — информация",
+            color=discord.Color(Colors.MAIN),
+        )
+        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+        embed.add_field(name="🐍 Версия Python", value=platform.python_version(), inline=True)
+        embed.add_field(name="📚 discord.py", value=discord.__version__, inline=True)
+        embed.add_field(name="🕒 Аптайм", value=uptime_text, inline=False)
+        embed.add_field(name="🖥 Сервера", value=str(len(self.bot.guilds)), inline=True)
+        embed.add_field(name="👥 Пользователи", value=f"{member_count:,}".replace(",", " "), inline=True)
+        embed.add_field(name="⚙ Коги", value=str(len(self.bot.cogs)), inline=True)
+        embed.add_field(name="📝 Команды", value=str(command_count), inline=True)
+        embed.add_field(name="📡 WebSocket", value=f"{self.bot.latency * 1000:.0f} мс", inline=True)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="roblox", description="Посмотреть подробный профиль Roblox участника")
     async def roblox_cmd(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
         await interaction.response.defer()
         target = member or interaction.user
