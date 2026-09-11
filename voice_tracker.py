@@ -21,7 +21,7 @@ class VoiceTrackerMixin:
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.voice_sessions: dict[str, dict[str, datetime]] = {}
 
     def restore_voice_sessions(self, bot) -> None:

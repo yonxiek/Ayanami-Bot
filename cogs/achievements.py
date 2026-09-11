@@ -79,6 +79,50 @@ async def check_rich_achievements(db: Database, guild_id: str, user_id: str, mem
         await award_achievement(db, guild_id, user_id, "rich_1000", member)
 
 
+async def check_all_achievements(db: Database, guild_id: str, user_id: str, member: discord.Member = None):
+    """Проверяет все пороговые достижения на основе текущих данных пользователя."""
+    user = await db.get_or_create_user(guild_id, user_id)
+    total_msgs = user.get("total_messages", 0)
+    total_voice = user.get("total_voice_minutes", 0)
+    level = user.get("level", 1)
+    balance = user.get("balance", 0)
+
+    checks = [
+        (total_msgs >= 1, "first_message"),
+        (total_msgs >= 100, "messages_100"),
+        (total_msgs >= 1000, "messages_1000"),
+        (total_voice >= 60, "voice_60"),
+        (total_voice >= 300, "voice_300"),
+        (level >= 5, "level_5"),
+        (level >= 10, "level_10"),
+        (level >= 20, "level_20"),
+        (balance >= 1000, "rich_1000"),
+        (balance >= 10000, "rich_10000"),
+    ]
+
+    try:
+        completed_quests = await db.count_completed_quests(guild_id, user_id)
+        checks.extend([
+            (completed_quests >= 1, "first_quest"),
+            (completed_quests >= 10, "quests_10"),
+        ])
+    except Exception:
+        pass
+
+    try:
+        unique_cards = await db.count_unique_cards(guild_id, user_id)
+        checks.extend([
+            (unique_cards >= 1, "first_card"),
+            (unique_cards >= 10, "cards_10"),
+        ])
+    except Exception:
+        pass
+
+    for condition, achievement_id in checks:
+        if condition:
+            await award_achievement(db, guild_id, user_id, achievement_id, member)
+
+
 class Achievements(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

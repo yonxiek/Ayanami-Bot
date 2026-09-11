@@ -11,6 +11,47 @@ from ui_components import AyanamiUI, Colors
 from voice_tracker import VoiceTrackerMixin
 
 
+class TopView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.current_tab = "coins"
+
+    async def _update(self, interaction: discord.Interaction, tab: str):
+        self.current_tab = tab
+        tab_map = {
+            "Монетки": "coins",
+            "Уровень": "level",
+            "Сообщения": "messages",
+            "Голос": "voice",
+        }
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.style = (
+                    discord.ButtonStyle.primary
+                    if tab_map.get(child.label) == tab
+                    else discord.ButtonStyle.secondary
+                )
+        embed = await self.cog._build_top_embed(interaction, tab)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Монетки", emoji="💰", style=discord.ButtonStyle.primary)
+    async def coins_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._update(interaction, "coins")
+
+    @discord.ui.button(label="Уровень", emoji="⭐", style=discord.ButtonStyle.secondary)
+    async def level_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._update(interaction, "level")
+
+    @discord.ui.button(label="Сообщения", emoji="💬", style=discord.ButtonStyle.secondary)
+    async def messages_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._update(interaction, "messages")
+
+    @discord.ui.button(label="Голос", emoji="🎙️", style=discord.ButtonStyle.secondary)
+    async def voice_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._update(interaction, "voice")
+
+
 class Economy(VoiceTrackerMixin, commands.Cog):
     def __init__(self, bot):
         super().__init__(bot)
@@ -89,6 +130,79 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         if minutes < 60: return f"{minutes} мин."
         return f"{minutes // 60} ч. {minutes % 60} мин."
 
+    async def _build_top_embed(self, interaction: discord.Interaction, tab: str = "coins") -> discord.Embed:
+        guild_id = str(interaction.guild.id)
+        medals = ["🥇", "🥈", "🥉"]
+
+        if tab == "level":
+            top_users = await self.db.get_top_users_by_level(guild_id, 15)
+            entries = []
+            for entry in top_users:
+                member = interaction.guild.get_member(int(entry["user_id"]))
+                name = member.display_name if member else f"ID: {entry['user_id']}"
+                entries.append((name, f"Ур. **{entry['level']}** • `{entry['exp']}` XP"))
+            title = "Топ по уровню"
+            color = discord.Color(0xF1C40F)
+            icon = "⭐"
+
+        elif tab == "messages":
+            cursor = await self.db.conn.execute(
+                "SELECT user_id, total_messages FROM users "
+                "WHERE guild_id = ? AND total_messages > 0 "
+                "ORDER BY total_messages DESC LIMIT 15",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+            entries = []
+            for row in rows:
+                member = interaction.guild.get_member(int(row["user_id"]))
+                name = member.display_name if member else f"ID: {row['user_id']}"
+                entries.append((name, f"**{row['total_messages']:,}** сообщений"))
+            title = "Топ по сообщениям"
+            color = discord.Color(0x3498DB)
+            icon = "💬"
+
+        elif tab == "voice":
+            cursor = await self.db.conn.execute(
+                "SELECT user_id, total_voice_minutes FROM users "
+                "WHERE guild_id = ? AND total_voice_minutes > 0 "
+                "ORDER BY total_voice_minutes DESC LIMIT 15",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+            entries = []
+            for row in rows:
+                member = interaction.guild.get_member(int(row["user_id"]))
+                name = member.display_name if member else f"ID: {row['user_id']}"
+                mins = row["total_voice_minutes"]
+                time_text = f"{mins // 60}ч {mins % 60}м" if mins >= 60 else f"{mins}м"
+                entries.append((name, time_text))
+            title = "Топ по голосу"
+            color = discord.Color(0x9B59B6)
+            icon = "🎙️"
+
+        else:
+            top_users = await self.db.get_top_users(guild_id, 15)
+            entries = []
+            for entry in top_users:
+                member = interaction.guild.get_member(int(entry["user_id"]))
+                name = member.display_name if member else f"ID: {entry['user_id']}"
+                entries.append((name, f"**{entry['balance']:,}** {AyanamiUI.E_RP}"))
+            title = "Топ по монеткам"
+            color = Colors.MAIN
+            icon = "💰"
+
+        desc_lines = []
+        for i, (name, value) in enumerate(entries):
+            medal = medals[i] if i < 3 else f"`{i + 1}.`"
+            desc_lines.append(f"{medal} **{name}** — {value}")
+
+        desc = "\n".join(desc_lines) if desc_lines else "*Пока пусто*"
+
+        embed = discord.Embed(title=f"{icon} {title}", description=desc, color=color)
+        embed.set_footer(text="Нажмите кнопку для переключения • Ayanami System")
+        return embed
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         if not payload.guild_id:
@@ -127,13 +241,12 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         streak = await self.db.get_daily_streak(str(interaction.guild.id), str(target.id))
 
         ach_count = 0
+        total_achievements = 0
         try:
-            from cogs.achievements import award_achievement
-            if bal >= 1000:
-                await award_achievement(self.db, str(interaction.guild.id), str(target.id), "rich_1000", target)
-            if bal >= 10000:
-                await award_achievement(self.db, str(interaction.guild.id), str(target.id), "rich_10000", target)
+            from cogs.achievements import ACHIEVEMENTS, check_all_achievements
+            await check_all_achievements(self.db, str(interaction.guild.id), str(target.id), target)
             ach_count = await self.db.count_achievements(str(interaction.guild.id), str(target.id))
+            total_achievements = len(ACHIEVEMENTS)
         except Exception:
             pass
 
@@ -168,7 +281,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
             f"> 😊 Реакции: **{reactions}**\n"
             f"> 🔥 Серия дней: **{streak}**\n\n"
             f"### 💰 Баланс: **{bal}** {AyanamiUI.E_RP}\n"
-            f"> 🏆 Достижения: **{ach_count}** из 19\n\n"
+            f"> 🏆 Достижения: **{ach_count}** из **{total_achievements}**\n\n"
             f"### 📈 Уровень {level} | Ранг #{rank_pos}{booster_text}\n"
             f"> `{bar}` `{xp_in_level}/{xp_needed}` XP"
         )
@@ -183,80 +296,13 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="top", description="Таблица лидеров")
-    @app_commands.describe(tab="Категория топа")
-    @app_commands.choices(tab=[
-        app_commands.Choice(name="Монетки", value="coins"),
-        app_commands.Choice(name="Уровень", value="level"),
-        app_commands.Choice(name="Сообщения", value="messages"),
-        app_commands.Choice(name="Голос", value="voice"),
-    ])
-    async def top(self, interaction: discord.Interaction, tab: str = "coins"):
+    async def top(self, interaction: discord.Interaction):
         if not interaction.guild:
             return
         await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        medals = ["🥇", "🥈", "🥉"]
-
-        if tab == "level":
-            top_users = await self.db.get_top_users_by_level(guild_id, 15)
-            desc = ""
-            for i, entry in enumerate(top_users):
-                member = interaction.guild.get_member(int(entry['user_id']))
-                name = member.display_name if member else f"ID: {entry['user_id']}"
-                place = medals[i] if i < 3 else f"`{i+1}.`"
-                desc += f"{place} **{name}** — Ур. `{entry['level']}` (`{entry['exp']}` XP)\n"
-            title = "🏆 Топ по уровню"
-            color = discord.Color(0xf1c40f)
-
-        elif tab == "messages":
-            cursor = await self.db.conn.execute(
-                'SELECT user_id, total_messages FROM users WHERE guild_id = ? AND total_messages > 0 ORDER BY total_messages DESC LIMIT 15',
-                (guild_id,)
-            )
-            rows = await cursor.fetchall()
-            desc = ""
-            for i, row in enumerate(rows):
-                member = interaction.guild.get_member(int(row['user_id']))
-                name = member.display_name if member else f"ID: {row['user_id']}"
-                place = medals[i] if i < 3 else f"`{i+1}.`"
-                desc += f"{place} **{name}** — {row['total_messages']} сообщений\n"
-            title = "🏆 Топ по сообщениям"
-            color = discord.Color(0x3498db)
-
-        elif tab == "voice":
-            cursor = await self.db.conn.execute(
-                'SELECT user_id, total_voice_minutes FROM users WHERE guild_id = ? AND total_voice_minutes > 0 ORDER BY total_voice_minutes DESC LIMIT 15',
-                (guild_id,)
-            )
-            rows = await cursor.fetchall()
-            desc = ""
-            for i, row in enumerate(rows):
-                member = interaction.guild.get_member(int(row['user_id']))
-                name = member.display_name if member else f"ID: {row['user_id']}"
-                place = medals[i] if i < 3 else f"`{i+1}.`"
-                mins = row['total_voice_minutes']
-                time_text = f"{mins // 60}ч {mins % 60}м" if mins >= 60 else f"{mins}м"
-                desc += f"{place} **{name}** — {time_text}\n"
-            title = "🏆 Топ по голосу"
-            color = discord.Color(0x9b59b6)
-
-        else:
-            top_users = await self.db.get_top_users(guild_id, 15)
-            desc = ""
-            for i, entry in enumerate(top_users):
-                member = interaction.guild.get_member(int(entry['user_id']))
-                name = member.display_name if member else f"ID: {entry['user_id']}"
-                place = medals[i] if i < 3 else f"`{i+1}.`"
-                desc += f"{place} **{name}** — {entry['balance']} {AyanamiUI.E_RP}\n"
-            title = "🏆 Топ по монеткам"
-            color = Colors.MAIN
-
-        if not desc:
-            desc = "*Пусто*"
-
-        embed = discord.Embed(title=title, description=desc, color=color)
-        embed.set_footer(text="Ayanami System")
-        await interaction.followup.send(embed=embed)
+        embed = await self._build_top_embed(interaction, "coins")
+        view = TopView(self)
+        await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="give", description="Выдать монетки")
     @app_commands.default_permissions(administrator=True)
@@ -302,7 +348,9 @@ class Economy(VoiceTrackerMixin, commands.Cog):
     @commands.command(name="top")
     async def top_prefix(self, ctx, tab: str = "coins"):
         from prefix_adapter import InteractionAdapter
-        await self.top.callback(self, InteractionAdapter(ctx), tab)
+        interaction = InteractionAdapter(ctx)
+        embed = await self._build_top_embed(interaction, tab)
+        await interaction.response.send_message(embed=embed)
 
     @commands.command(name="give")
     @commands.has_permissions(administrator=True)

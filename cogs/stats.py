@@ -2,12 +2,9 @@ import asyncio
 from datetime import datetime
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from db import Database
-from prefix_adapter import InteractionAdapter
-from ui_components import Colors
 from voice_tracker import VoiceTrackerMixin
 
 
@@ -68,44 +65,6 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             str(interaction.guild.id), str(interaction.user.id), current_week_key(), "commands"
         )
 
-    @app_commands.command(name="weekly_top", description="Топ активности за эту неделю")
-    async def weekly_top(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            return
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        week = current_week_key()
-
-        msg_rows = await self.db.get_weekly_top(guild_id, week, "messages", 10)
-        voice_rows = await self.db.get_weekly_top(guild_id, week, "voice_minutes", 10)
-
-        async def format_rows(rows, fmt):
-            if not rows:
-                return "Пока пусто."
-            lines = []
-            for i, row in enumerate(rows[:10], 1):
-                user = interaction.guild.get_member(int(row["user_id"]))
-                name = user.display_name if user else f"<@{row['user_id']}>"
-                lines.append(f"**{i}.** {name} — {fmt(row['amount'])}")
-            return "\n".join(lines)
-
-        def fmt_voice(mins):
-            if mins < 60:
-                return f"{mins} мин."
-            return f"{mins // 60} ч. {mins % 60} мин."
-
-        embed = discord.Embed(
-            title=f"📊 Топ активности — неделя {week}",
-            color=Colors.MAIN,
-        )
-        embed.add_field(name="💬 Сообщения", value=await format_rows(msg_rows, lambda n: f"{n} сообщ."), inline=True)
-        embed.add_field(name="🎙️ Голосовые минуты", value=await format_rows(voice_rows, fmt_voice), inline=True)
-        embed.set_footer(text="Обновляется автоматически")
-        await interaction.followup.send(embed=embed)
-
-    @commands.command(name="weekly_top")
-    async def weekly_top_prefix(self, ctx):
-        await self.weekly_top.callback(self, InteractionAdapter(ctx))
 
 
 async def setup(bot):
