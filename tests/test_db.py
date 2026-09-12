@@ -295,3 +295,39 @@ async def test_clear_all_data_resets_config(db):
     assert (await cursor.fetchone())["c"] == 0
     cursor = await db.conn.execute("SELECT COUNT(*) as c FROM clans WHERE guild_id = '111'")
     assert (await cursor.fetchone())["c"] == 0
+
+
+async def test_migrates_adds_missing_user_columns(tmp_path):
+    """БД с roblox_nick, но без raids_attended должны покрываться идемпотентной миграцией."""
+    import aiosqlite
+
+    from db import Database
+
+    old_path = str(tmp_path / "old_users.db")
+    conn = await aiosqlite.connect(old_path)
+    await conn.execute(
+        'CREATE TABLE users (guild_id TEXT, user_id TEXT, balance INTEGER DEFAULT 0, '
+        'joined_at TIMESTAMP, exp INTEGER DEFAULT 0, level INTEGER DEFAULT 1, '
+        'total_messages INTEGER DEFAULT 0, total_voice_minutes INTEGER DEFAULT 0, '
+        'total_commands INTEGER DEFAULT 0, reputation INTEGER DEFAULT 0, '
+        'roblox_nick TEXT DEFAULT "Не указан", PRIMARY KEY (guild_id, user_id))')
+    await conn.commit()
+    await conn.close()
+
+    Database._instance = None
+    db = Database(old_path)
+    await db.init_db()
+
+    cursor = await db.conn.execute("PRAGMA table_info(users)")
+    cols = {row[1] for row in await cursor.fetchall()}
+    assert "roblox_nick" in cols
+    assert "raids_attended" in cols
+    if db.conn:
+        await db.conn.close()
+
+    Database._instance = None
+    db = Database(old_path)
+    await db.init_db()
+    await db.clear_all_activity("111")
+    if db.conn:
+        await db.conn.close()

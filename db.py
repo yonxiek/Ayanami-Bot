@@ -334,13 +334,9 @@ class Database:
         for table in tables:
             await self.conn.execute(table)
             
-        try:
-            await self.conn.execute('ALTER TABLE users ADD COLUMN roblox_nick TEXT DEFAULT "Не указан"')
-            await self.conn.execute('ALTER TABLE users ADD COLUMN raids_attended INTEGER DEFAULT 0')
-        except Exception:
-            pass
-
         migration_columns = [
+            ('users', 'roblox_nick', "TEXT DEFAULT 'Не указан'"),
+            ('users', 'raids_attended', 'INTEGER DEFAULT 0'),
             ('shop_items', 'item_id', 'TEXT'),
             ('shop_items', 'name', 'TEXT'),
             ('shop_items', 'description', 'TEXT'),
