@@ -292,10 +292,10 @@ class ModMenu(commands.Cog):
             return await cog.clear.callback(cog, interaction, amount)
 
         if action in ("blacklist", "unblacklist", "ban", "unban"):
-            user = None
+            user = self._resolve_member(interaction.guild, values[0])
             cid = _extract_id(values[0])
-            if cid:
-                user = interaction.guild.get_member(cid) or await self._fetch_user(interaction, cid)
+            if not user and cid:
+                user = await self._fetch_user(interaction, cid)
             if not user:
                 return await interaction.response.send_message("❌ Пользователь не найден.", ephemeral=True)
             if action == "blacklist":
@@ -306,10 +306,7 @@ class ModMenu(commands.Cog):
                 return await cog.ban.callback(cog, interaction, user, values[1] or "Не указана")
             return await cog.unban.callback(cog, interaction, user)
 
-        member = None
-        cid = _extract_id(values[0])
-        if cid:
-            member = interaction.guild.get_member(cid)
+        member = self._resolve_member(interaction.guild, values[0])
         if not member:
             return await interaction.response.send_message("❌ Участник не найден на сервере.", ephemeral=True)
 
@@ -348,6 +345,23 @@ class ModMenu(commands.Cog):
             return await cog.set_role(interaction, member, role, action == "removerole")
 
         return await interaction.response.send_message("❌ Неизвестное действие.", ephemeral=True)
+
+    def _resolve_member(self, guild: discord.Guild, text: str) -> discord.Member | None:
+        text = text.strip()
+        cid = _extract_id(text)
+        if cid:
+            member = guild.get_member(cid)
+            if member:
+                return member
+        query = text.lstrip("@").strip().lower()
+        if not query:
+            return None
+        for member in guild.members:
+            if (member.name.lower() == query
+                    or (member.nick and member.nick.lower() == query)
+                    or member.display_name.lower() == query):
+                return member
+        return None
 
     def _resolve_role(self, guild: discord.Guild, text: str) -> discord.Role | None:
         text = text.strip()
