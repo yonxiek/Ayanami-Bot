@@ -35,6 +35,7 @@ class Database:
             '''CREATE TABLE IF NOT EXISTS guild_config (guild_id TEXT PRIMARY KEY, config TEXT NOT NULL)''',
             '''CREATE TABLE IF NOT EXISTS mod_stats (guild_id TEXT, moderator_id TEXT, action_type TEXT, count INTEGER DEFAULT 0, PRIMARY KEY (guild_id, moderator_id, action_type))''',
             '''CREATE TABLE IF NOT EXISTS warns (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, reason TEXT, timestamp TEXT)''',
+            '''CREATE TABLE IF NOT EXISTS temporary_bans (guild_id TEXT, user_id TEXT, moderator_id TEXT, reason TEXT, until TEXT, timestamp TEXT)''',
             '''CREATE TABLE IF NOT EXISTS mod_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, note TEXT, timestamp TEXT)''',
             '''CREATE TABLE IF NOT EXISTS level_roles (guild_id TEXT, level INTEGER, role_id TEXT, PRIMARY KEY (guild_id, level))''',
             '''CREATE TABLE IF NOT EXISTS bounties (
@@ -776,6 +777,57 @@ class Database:
         if expired:
             await self.conn.execute(
                 'DELETE FROM xp_boosts WHERE expires_at <= ?', (now,)
+            )
+            await self.conn.commit()
+        return expired
+
+    # ==========================================
+    #     TEMPORARY BANS (временные баны)
+    # ==========================================
+
+    async def add_temporary_ban(self, guild_id: str, user_id: str, moderator_id: str, reason: str, until: str):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO temporary_bans (guild_id, user_id, moderator_id, reason, until, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+            (guild_id, user_id, moderator_id, reason, until, datetime.now(timezone.utc).isoformat())
+        )
+        await self.conn.commit()
+
+    async def get_temporary_ban(self, guild_id: str, user_id: str) -> dict:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM temporary_bans WHERE guild_id = ? AND user_id = ? AND until > ?',
+            (guild_id, user_id, now)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def remove_temporary_ban(self, guild_id: str, user_id: str):
+        await self.conn.execute(
+            'DELETE FROM temporary_bans WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        await self.conn.commit()
+
+    async def get_guild_temporary_bans(self, guild_id: str) -> list:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM temporary_bans WHERE guild_id = ? AND until > ?',
+            (guild_id, now)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def remove_expired_temporary_bans(self) -> list:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self.conn.execute(
+            'SELECT * FROM temporary_bans WHERE until <= ?', (now,)
+        )
+        expired = [dict(row) for row in await cursor.fetchall()]
+        if expired:
+            await self.conn.execute(
+                'DELETE FROM temporary_bans WHERE until <= ?', (now,)
             )
             await self.conn.commit()
         return expired
