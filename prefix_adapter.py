@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 
-import discord
 from discord.ext import commands
 
 
