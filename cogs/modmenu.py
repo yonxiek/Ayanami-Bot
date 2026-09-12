@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from member_resolver import find_member
+from prefix_adapter import find_member
 
 
 COLORS = {

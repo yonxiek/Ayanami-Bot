@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from db import Database
-from member_resolver import MemberSearch, UserSearch
+from prefix_adapter import MemberSearch, UserSearch
 from ui_components import AyanamiUI, Colors, Icons
 
 
