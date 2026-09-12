@@ -433,6 +433,7 @@ class Utils(commands.Cog):
         return None
 
     @app_commands.command(name="whois", description="\u041f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u043f\u043e\u0434\u0440\u043e\u0431\u043d\u0443\u044e \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044e \u043e\u0431 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0435")
+    @app_commands.describe(member="\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a (\u043f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u2014 \u0432\u044b)")
     async def whois(self, interaction: discord.Interaction, member: discord.Member | None = None):
         target = member or interaction.user
         roles = [role.mention for role in reversed(target.roles[1:])]
@@ -466,6 +467,7 @@ class Utils(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="roblox", description="Посмотреть подробный профиль Roblox участника")
+    @app_commands.describe(member="\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a, \u0447\u0435\u0439 Roblox-\u043f\u0440\u043e\u0444\u0438\u043b\u044c \u043f\u043e\u043a\u0430\u0437\u0430\u0442\u044c")
     async def roblox_cmd(self, interaction: discord.Interaction, member: discord.Member | None = None):
         await interaction.response.defer()
         target = member or interaction.user

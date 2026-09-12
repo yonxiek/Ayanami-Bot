@@ -226,6 +226,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         await self.db.update_activity(str(payload.guild_id), str(member.id), "reactions")
 
     @app_commands.command(name="profile", description="Профиль")
+    @app_commands.describe(member="Участник, чей профиль показать")
     async def profile(self, interaction: discord.Interaction, member: discord.Member = None):
         if not interaction.guild: return
         await interaction.response.defer()
@@ -318,6 +319,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="give", description="Выдать монетки")
+    @app_commands.describe(amount="Сколько монет выдать", users="Участники через пробел (упоминания или ID)")
     @app_commands.default_permissions(administrator=True)
     async def give_slash(self, interaction: discord.Interaction, amount: int, users: str):
         try:
@@ -337,6 +339,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="remove", description="Забрать монетки у пользователей")
+    @app_commands.describe(amount="Сколько монет забрать", users="Участники через пробел (упоминания или ID)")
     @app_commands.default_permissions(administrator=True)
     async def remove_slash(self, interaction: discord.Interaction, amount: int, users: str):
         try:

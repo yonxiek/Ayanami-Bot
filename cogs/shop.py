@@ -274,6 +274,7 @@ class Shop(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="inventory", description="Ваш инвентарь")
+    @app_commands.describe(member="Участник, чей инвентарь показать")
     async def inventory(self, interaction: discord.Interaction, member: discord.Member = None):
         if not interaction.guild:
             return

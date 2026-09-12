@@ -88,6 +88,7 @@ class Moderation(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="modstats", description="Статистика модератора")
+    @app_commands.describe(moderator="Модератор, чью статистику показать")
     async def modstats(self, interaction: discord.Interaction, moderator: discord.Member = None):
         target = moderator or interaction.user
         stats = await self.db.get_mod_stats(str(interaction.guild.id), str(target.id))

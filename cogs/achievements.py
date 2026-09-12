@@ -129,6 +129,7 @@ class Achievements(commands.Cog):
         self.db = Database()
 
     @app_commands.command(name="achievements", description="Твои достижения")
+    @app_commands.describe(member="Участник, чьи достижения показать")
     async def achievements(self, interaction: discord.Interaction, member: discord.Member = None):
         if not interaction.guild:
             return
