@@ -328,10 +328,6 @@ class SetupAdminView(discord.ui.View):
         )
         await interaction.followup.send(text, ephemeral=True)
 
-    @discord.ui.button(label="Бустер XP-бонус", emoji="⚡", style=discord.ButtonStyle.green, row=4)
-    async def btn_booster_boost(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(BoosterBoostModal(self.db, self.guild_id))
-
     @discord.ui.button(label="Статус бота", emoji="🟢", style=discord.ButtonStyle.blurple, row=4)
     async def btn_bot_status(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
@@ -349,13 +345,48 @@ class SetupAdminView(discord.ui.View):
         modal.prefix_input.default = config.get("prefix", "!")
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label="Кулдаун команд", emoji="⚡", style=discord.ButtonStyle.grey, row=4)
+    @discord.ui.button(label="Расширенные", emoji="⚙️", style=discord.ButtonStyle.grey, row=4)
+    async def btn_extras(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = SetupAdminExtrasView(self.cog, self.db, self.guild_id)
+        await interaction.response.send_message(
+            "⚙️ **Расширенные настройки**",
+            view=view, ephemeral=True
+        )
+
+
+class SetupAdminExtrasView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="Бустер XP-бонус", emoji="⚡", style=discord.ButtonStyle.green, row=0)
+    async def btn_booster_boost(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BoosterBoostModal(self.db, self.guild_id))
+
+    @discord.ui.button(label="Статус бота", emoji="🟢", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_bot_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        status_type = config.get("bot_status_type", "playing")
+        status_text = config.get("bot_status_text", "")
+        modal = BotStatusModal(self.db, self.guild_id)
+        modal.status_type.default = status_type
+        modal.status_text.default = status_text
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Кулдаун команд", emoji="⚡", style=discord.ButtonStyle.grey, row=1)
     async def btn_cooldown(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = CooldownSettingsView(self.cog, self.db, self.guild_id)
         await interaction.response.send_message(
             "⚡ **Кулдаун команд**\nВыберите длительность перезарядки и роли, для которых кулдаун не действует:",
             view=view, ephemeral=True
         )
+
+    @discord.ui.button(label="◀️ К основным", style=discord.ButtonStyle.secondary, row=1)
+    async def btn_back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = SetupAdminView(self.cog, self.db, self.guild_id)
+        await interaction.response.edit_message(embed=None, view=view)
 
 
 class PrefixModal(discord.ui.Modal, title="Префикс сервера"):
@@ -567,7 +598,7 @@ class SetupChatView(discord.ui.View):
             discord.SelectOption(label="30 секунд", value="30", emoji="🐢"),
             discord.SelectOption(label="60 секунд", value="60", emoji="🐢"),
         ],
-        row=1
+        row=3
     )
     async def select_cooldown(self, interaction: discord.Interaction, select: discord.ui.Select):
         await interaction.response.defer(ephemeral=True)
@@ -880,7 +911,7 @@ class SetupLoggingView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f"❌ Ошибка: {e}", ephemeral=True)
 
-    @discord.ui.button(label="Экспорт конфига", emoji="📥", style=discord.ButtonStyle.grey, row=2)
+    @discord.ui.button(label="Экспорт конфига", emoji="📥", style=discord.ButtonStyle.grey, row=3)
     async def btn_export_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         import json
         config = await self.db.get_guild_config(str(self.guild_id))
@@ -894,7 +925,7 @@ class SetupLoggingView(discord.ui.View):
         else:
             await interaction.response.send_message(f"```json\n{config_json}\n```", ephemeral=True)
 
-    @discord.ui.button(label="Импорт конфига", emoji="📤", style=discord.ButtonStyle.grey, row=2)
+    @discord.ui.button(label="Импорт конфига", emoji="📤", style=discord.ButtonStyle.grey, row=3)
     async def btn_import_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ImportConfigModal(self.db, self.guild_id)
         await interaction.response.send_modal(modal)
