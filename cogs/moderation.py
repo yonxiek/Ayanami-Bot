@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from db import Database
+from member_resolver import MemberSearch, UserSearch
 from ui_components import AyanamiUI, Colors, Icons
 
 
@@ -849,81 +850,56 @@ class Moderation(commands.Cog):
 
     @commands.command(name="mute")
     @commands.has_permissions(moderate_members=True)
-    async def mute_prefix(self, ctx, member: discord.Member, duration: str, *, reason: str = "Не указана"):
+    async def mute_prefix(self, ctx, member: MemberSearch, duration: str, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
         await self.mute.callback(self, InteractionAdapter(ctx), member, duration, reason)
 
     @commands.command(name="unmute")
     @commands.has_permissions(moderate_members=True)
-    async def unmute_prefix(self, ctx, member: discord.Member, *, reason: str = "Снято модератором"):
+    async def unmute_prefix(self, ctx, member: MemberSearch, *, reason: str = "Снято модератором"):
         from prefix_adapter import InteractionAdapter
         await self.unmute.callback(self, InteractionAdapter(ctx), member, reason)
 
     @commands.command(name="warn")
     @commands.has_permissions(moderate_members=True)
-    async def warn_prefix(self, ctx, member: discord.Member, *, reason: str = "Не указана"):
+    async def warn_prefix(self, ctx, member: MemberSearch, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
         await self.warn.callback(self, InteractionAdapter(ctx), member, reason)
 
     @commands.command(name="warns")
-    async def warns_prefix(self, ctx, member: discord.Member = None):
+    async def warns_prefix(self, ctx, member: MemberSearch = None):
         from prefix_adapter import InteractionAdapter
         await self.warns.callback(self, InteractionAdapter(ctx), member)
 
     @commands.command(name="kick")
     @commands.has_permissions(kick_members=True)
-    async def kick_prefix(self, ctx, member: discord.Member, *, reason: str = "Не указана"):
+    async def kick_prefix(self, ctx, member: MemberSearch, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
         await self.kick.callback(self, InteractionAdapter(ctx), member, reason)
 
     @commands.command(name="ban")
     @commands.has_permissions(ban_members=True)
-    async def ban_prefix(self, ctx, member, *, reason: str = "Не указана"):
+    async def ban_prefix(self, ctx, member: UserSearch, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
-        try:
-            m = await commands.UserConverter().convert(ctx, member)
-        except commands.BadArgument:
-            try:
-                m = await commands.MemberConverter().convert(ctx, member)
-            except commands.BadArgument:
-                return await ctx.send("❌ Участник или ID не найден.")
-        await self.ban.callback(self, InteractionAdapter(ctx), m, reason)
+        await self.ban.callback(self, InteractionAdapter(ctx), member, reason)
 
     @commands.command(name="unban")
     @commands.has_permissions(ban_members=True)
-    async def unban_prefix(self, ctx, member, *, reason: str = "Не указана"):
+    async def unban_prefix(self, ctx, member: UserSearch, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
-        try:
-            m = await commands.UserConverter().convert(ctx, member)
-        except commands.BadArgument:
-            return await ctx.send("❌ Пользователь или ID не найден.")
-        await self.unban.callback(self, InteractionAdapter(ctx), m, reason)
+        await self.unban.callback(self, InteractionAdapter(ctx), member, reason)
 
     @commands.command(name="blacklist")
     @commands.has_permissions(manage_roles=True)
-    async def blacklist_prefix(self, ctx, user, *, reason: str = "Нарушение правил"):
+    async def blacklist_prefix(self, ctx, user: UserSearch, *, reason: str = "Нарушение правил"):
         from prefix_adapter import InteractionAdapter
-        try:
-            u = await commands.UserConverter().convert(ctx, user)
-        except commands.BadArgument:
-            try:
-                u = await commands.MemberConverter().convert(ctx, user)
-            except commands.BadArgument:
-                return await ctx.send("❌ Участник или ID не найден.")
-        await self.blacklist.callback(self, InteractionAdapter(ctx), u, reason)
+        await self.blacklist.callback(self, InteractionAdapter(ctx), user, reason)
 
     @commands.command(name="unblacklist")
     @commands.has_permissions(manage_roles=True)
-    async def unblacklist_prefix(self, ctx, user):
+    async def unblacklist_prefix(self, ctx, user: UserSearch):
         from prefix_adapter import InteractionAdapter
-        try:
-            u = await commands.UserConverter().convert(ctx, user)
-        except commands.BadArgument:
-            try:
-                u = await commands.MemberConverter().convert(ctx, user)
-            except commands.BadArgument:
-                return await ctx.send("❌ Участник или ID не найден.")
-        await self.unblacklist.callback(self, InteractionAdapter(ctx), u)
+        await self.unblacklist.callback(self, InteractionAdapter(ctx), user)
 
     @commands.command(name="promote")
     @commands.has_permissions(administrator=True)
@@ -939,13 +915,13 @@ class Moderation(commands.Cog):
 
     @commands.command(name="modnote")
     @commands.has_permissions(moderate_members=True)
-    async def modnote_prefix(self, ctx, member: discord.Member, *, note: str):
+    async def modnote_prefix(self, ctx, member: MemberSearch, *, note: str):
         from prefix_adapter import InteractionAdapter
         await self.modnote.callback(self, InteractionAdapter(ctx), member, note)
 
     @commands.command(name="history")
     @commands.has_permissions(moderate_members=True)
-    async def history_prefix(self, ctx, member: discord.Member):
+    async def history_prefix(self, ctx, member: MemberSearch):
         from prefix_adapter import InteractionAdapter
         await self.history.callback(self, InteractionAdapter(ctx), member)
 

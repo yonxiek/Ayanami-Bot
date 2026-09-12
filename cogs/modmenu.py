@@ -4,6 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from member_resolver import find_member
+
 
 COLORS = {
     "Санкции": 0xe74c3c,
@@ -347,21 +349,7 @@ class ModMenu(commands.Cog):
         return await interaction.response.send_message("❌ Неизвестное действие.", ephemeral=True)
 
     def _resolve_member(self, guild: discord.Guild, text: str) -> discord.Member | None:
-        text = text.strip()
-        cid = _extract_id(text)
-        if cid:
-            member = guild.get_member(cid)
-            if member:
-                return member
-        query = text.lstrip("@").strip().lower()
-        if not query:
-            return None
-        for member in guild.members:
-            if (member.name.lower() == query
-                    or (member.nick and member.nick.lower() == query)
-                    or member.display_name.lower() == query):
-                return member
-        return None
+        return find_member(guild, text)
 
     def _resolve_role(self, guild: discord.Guild, text: str) -> discord.Role | None:
         text = text.strip()
