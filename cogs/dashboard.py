@@ -99,14 +99,19 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Кланы", value="clans", emoji="⚔️", description="Настройка кланов сервера"),
             discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
             discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
+        ]
+        extra_options = [
             discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
             discord.SelectOption(label="Данные", value="data", emoji="🗑️", description="Очистка данных: активность, квесты, полный сброс бота"),
         ]
         select = discord.ui.Select(placeholder="Выберите модуль для настройки...", options=options)
         select.callback = self.menu_callback
+        select2 = discord.ui.Select(placeholder="Инструменты...", options=extra_options)
+        select2.callback = self.menu_callback
 
         action_row = discord.ui.ActionRow(select)
         container.add_item(action_row)
+        container.add_item(discord.ui.ActionRow(select2))
         self.add_item(container)
 
     async def menu_callback(self, interaction: discord.Interaction):
