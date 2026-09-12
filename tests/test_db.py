@@ -218,3 +218,80 @@ async def test_deactivate_expired_warnings(db):
     deactivated = await db.deactivate_expired_warnings()
     assert deactivated == 1
     assert await db.get_active_warnings("111", "222") == 1
+
+
+async def _seed_user_stats(db, guild_id="111", user_id="222"):
+    await db.create_user(guild_id, user_id)
+    await db.conn.execute(
+        "UPDATE users SET total_messages = 100, total_voice_minutes = 50, total_commands = 20, "
+        "reputation = 5, exp = 1500, level = 12 WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id))
+    await db.increment_weekly(guild_id, user_id, "2099-W01", "messages", 10)
+    await db.increment_weekly(guild_id, user_id, "2099-W01", "voice_minutes", 5)
+    await db.increment_weekly(guild_id, user_id, "2099-W01", "commands", 3)
+    await db.update_activity(guild_id, user_id, "voice_join", 4)
+    await db.award_achievement(guild_id, user_id, "first_ticket")
+    await db.conn.commit()
+
+
+async def test_clear_message_stats(db):
+    await _seed_user_stats(db)
+    await db.clear_message_stats("111")
+    user = await db.get_or_create_user("111", "222")
+    assert user["total_messages"] == 0
+    assert user["total_voice_minutes"] == 50
+    cursor = await db.conn.execute("SELECT messages FROM weekly_stats WHERE guild_id = '111'")
+    row = await cursor.fetchone()
+    assert row["messages"] == 0
+
+
+async def test_clear_voice_and_command_stats(db):
+    await _seed_user_stats(db)
+    await db.clear_voice_stats("111")
+    await db.clear_command_stats("111")
+    user = await db.get_or_create_user("111", "222")
+    assert user["total_voice_minutes"] == 0
+    assert user["total_commands"] == 0
+    assert user["total_messages"] == 100
+    cursor = await db.conn.execute("SELECT voice_minutes, commands FROM weekly_stats WHERE guild_id = '111'")
+    row = await cursor.fetchone()
+    assert row["voice_minutes"] == 0
+    assert row["commands"] == 0
+
+
+async def test_clear_weekly_stats_and_reputation(db):
+    await _seed_user_stats(db)
+    await db.clear_weekly_stats("111")
+    await db.clear_reputation("111")
+    user = await db.get_or_create_user("111", "222")
+    assert user["reputation"] == 0
+    cursor = await db.conn.execute("SELECT COUNT(*) as c FROM weekly_stats WHERE guild_id = '111'")
+    row = await cursor.fetchone()
+    assert row["c"] == 0
+
+
+async def test_clear_all_activity(db):
+    await _seed_user_stats(db)
+    await db.clear_all_activity("111")
+    user = await db.get_or_create_user("111", "222")
+    assert user["total_messages"] == 0
+    assert user["total_voice_minutes"] == 0
+    assert user["total_commands"] == 0
+    assert user["reputation"] == 0
+    assert user["exp"] == 0
+    assert user["level"] == 1
+    assert await db.count_achievements("111", "222") == 0
+    assert await db.get_user_activities("111", "222") == {}
+    cursor = await db.conn.execute("SELECT COUNT(*) as c FROM weekly_stats WHERE guild_id = '111'")
+    assert (await cursor.fetchone())["c"] == 0
+
+
+async def test_clear_all_data_resets_config(db):
+    await db.update_guild_config("111", prefix="!", modules={"chat": False})
+    await _seed_user_stats(db)
+    await db.clear_all_data("111")
+    assert await db.get_guild_config("111") == {}
+    cursor = await db.conn.execute("SELECT COUNT(*) as c FROM users WHERE guild_id = '111'")
+    assert (await cursor.fetchone())["c"] == 0
+    cursor = await db.conn.execute("SELECT COUNT(*) as c FROM clans WHERE guild_id = '111'")
+    assert (await cursor.fetchone())["c"] == 0

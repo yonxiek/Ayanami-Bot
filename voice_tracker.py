@@ -47,6 +47,10 @@ class VoiceTrackerMixin:
         minutes = int((datetime.now(timezone.utc) - start).total_seconds() / 60)
         return minutes, start
 
+    def reset_voice_sessions(self, guild_id: int | str) -> None:
+        """Полностью сбрасывает активные сессии участников на сервере."""
+        self.voice_sessions.pop(str(guild_id), None)
+
     def get_ongoing_minutes(self, guild_id: int | str, user_id: int | str) -> int:
         """Возвращает минуты текущей активной сессии без её завершения."""
         start = self.voice_sessions.get(str(guild_id), {}).get(str(user_id))

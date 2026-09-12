@@ -100,6 +100,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
             discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
             discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
+            discord.SelectOption(label="Данные", value="data", emoji="🗑️", description="Очистка данных: активность, квесты, полный сброс бота"),
         ]
         select = discord.ui.Select(placeholder="Выберите модуль для настройки...", options=options)
         select.callback = self.menu_callback
@@ -137,6 +138,7 @@ class DashboardView(discord.ui.LayoutView):
             "cards": lambda: SetupCardsView(self.cog, db, self.guild_id),
             "github": lambda: SetupGithubView(self.cog, db, self.guild_id),
             "webhooks": lambda: SetupWebhookView(self.cog, db, self.guild_id),
+            "data": lambda: SetupDataView(self.cog, db, self.guild_id),
         }
 
         if val == "perms":
@@ -2576,6 +2578,179 @@ class QuestClearView(discord.ui.View):
                 item.disabled = True
         await interaction.response.edit_message(view=self)
         await interaction.followup.send(msg, ephemeral=True)
+
+
+# ==========================================
+#   ДАННЫЕ (ОЧИСТКА)
+# ==========================================
+
+class SetupDataView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Выбрать данные", emoji="🗑️", style=discord.ButtonStyle.danger, row=2)
+    async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = DataClearView(self.cog, self.db, self.guild_id)
+        await view.build_select()
+        embed = discord.Embed(
+            title="🗑️ Очистка данных",
+            description="Выберите, какие данные нужно очистить:\n\n"
+                        "• **🧨 Вся активность** — сообщения, войс, команды, XP, уровни, "
+                        "репутация, серии, достижения, недельная статистика\n"
+                        "• **💥 Полный сброс** — удалит ВСЕ данные и настройки сервера, "
+                        "и `/setup` придётся проходить заново",
+            color=Colors.MAIN,
+        )
+        embed.set_footer(text="Опасные операции требуют подтверждения")
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class DataClearView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+
+    async def build_select(self):
+        options = [
+            discord.SelectOption(label="Сообщения", value="activity_messages", description="Сбросить счётчик сообщений у всех"),
+            discord.SelectOption(label="Голосовые минуты", value="activity_voice", description="Сбросить время в войсе у всех"),
+            discord.SelectOption(label="Команды", value="activity_commands", description="Сбросить счётчик команд у всех"),
+            discord.SelectOption(label="Реакции и входы в войс", value="activity_counters", description="Обнулить детальные счётчики активности"),
+            discord.SelectOption(label="Уровни и XP", value="activity_levels", description="Обнулить опыт и сбросить уровни"),
+            discord.SelectOption(label="Недельная статистика", value="activity_weekly", description="Стереть историю по неделям"),
+            discord.SelectOption(label="Ежедневные серии", value="activity_daily", description="Сбросить серии и ежедневные награды"),
+            discord.SelectOption(label="Репутация", value="activity_reputation", description="Обнулить репутацию"),
+            discord.SelectOption(label="Достижения", value="achievements", description="Снять все достижения"),
+            discord.SelectOption(label="Дуэли", value="duels", description="Сбросить статистику дуэлей"),
+            discord.SelectOption(label="Мини-игры", value="games", description="Сбросить счёт игр"),
+            discord.SelectOption(label="Квесты", value="quests", description="Удалить квесты и прогресс по ним"),
+            discord.SelectOption(label="Балансы", value="balances", description="Обнулить монетки"),
+            discord.SelectOption(label="🧨 Вся активность", value="activity_all", description="Сообщения, войс, команды, XP, репутация, серии, достижения"),
+            discord.SelectOption(label="💥 Полный сброс", value="full_reset", description="ВСЕ данные и настройки — /setup заново"),
+        ]
+        select = discord.ui.Select(placeholder="Выберите что очистить...", options=options)
+        select.callback = self.clear_callback
+        self.add_item(select)
+
+    def _reset_voice_sessions(self):
+        for cog in self.cog.bot.cogs.values():
+            reset = getattr(cog, "reset_voice_sessions", None)
+            if reset is not None:
+                reset(str(self.guild_id))
+
+    async def clear_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        guild_id = str(self.guild_id)
+        db = self.db
+
+        if value == "activity_all" or value == "full_reset":
+            title = "всю активность сервера" if value == "activity_all" else "ВСЕ данные и настройки сервера"
+            desc = (
+                "Будут удалены сообщения, войс, команды, XP, репутация, серии, достижения."
+                if value == "activity_all"
+                else "Будут удалены профили, квесты, магазин, кланы, лимиты, настройки. "
+                     "`/setup` придётся проходить заново."
+            )
+            for item in self.children:
+                item.disabled = True
+            await interaction.response.edit_message(view=self)
+            view = DataClearConfirmView(self.cog, db, self.guild_id, value)
+            embed = discord.Embed(
+                title=f"⚠️ Подтверждение: {title}",
+                description=desc,
+                color=Colors.MAIN,
+            )
+            embed.set_footer(text="Это действие необратимо")
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            return
+
+        handlers = {
+            "activity_messages": (db.clear_message_stats, "✅ Статистика сообщений очищена."),
+            "activity_voice": (db.clear_voice_stats, "✅ Голосовая активность очищена."),
+            "activity_commands": (db.clear_command_stats, "✅ Статистика команд очищена."),
+            "activity_counters": (db.clear_user_activity, "✅ Счётчики активности обнулены."),
+            "activity_levels": (db.clear_levels, "✅ Уровни и XP сброшены."),
+            "activity_weekly": (db.clear_weekly_stats, "✅ Недельная статистика очищена."),
+            "activity_daily": (db.clear_daily_rewards, "✅ Ежедневные серии сброшены."),
+            "activity_reputation": (db.clear_reputation, "✅ Репутация обнулена."),
+            "achievements": (db.clear_achievements, "✅ Достижения сняты."),
+            "duels": (db.clear_duel_stats, "✅ Статистика дуэлей сброшена."),
+            "games": (db.clear_game_scores, "✅ Счёт игр сброшен."),
+            "quests": (self._clear_quests, "✅ Квесты и их прогресс удалены."),
+            "balances": (db.clear_balances, "✅ Балансы обнулены."),
+        }
+        func, msg = handlers.get(value, (None, None))
+        if func is None:
+            msg = "❌ Неизвестная операция."
+        elif value == "activity_voice":
+            await db.clear_voice_stats(guild_id)
+            self._reset_voice_sessions()
+        else:
+            result = func()
+            if hasattr(result, "__await__"):
+                await result
+
+        await log_settings_change(
+            interaction, "Данные",
+            f"**Действие:** очистка данных\n**Операция:** `{value}`"
+        )
+
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(msg, ephemeral=True)
+
+    async def _clear_quests(self):
+        await self.db.clear_all_quests(str(self.guild_id))
+        await self.db.clear_random_pool(str(self.guild_id))
+
+
+class DataClearConfirmView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int, operation: str):
+        super().__init__(timeout=90)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.operation = operation
+
+    def _reset_voice_sessions(self):
+        for cog in self.cog.bot.cogs.values():
+            reset = getattr(cog, "reset_voice_sessions", None)
+            if reset is not None:
+                reset(str(self.guild_id))
+
+    @discord.ui.button(label="Подтверждаю", emoji="⚠️", style=discord.ButtonStyle.danger, row=0)
+    async def btn_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.operation == "activity_all":
+            await self.db.clear_all_activity(str(self.guild_id))
+            self._reset_voice_sessions()
+            msg = "✅ Вся активность сервера очищена."
+        else:
+            await self.db.clear_all_data(str(self.guild_id))
+            self._reset_voice_sessions()
+            msg = "💥 Все данные сброшены. Теперь нужно заново пройти настройку через `/setup`."
+
+        await log_settings_change(
+            interaction, "Данные",
+            f"**Действие:** подтверждённая очистка\n**Операция:** `{self.operation}`"
+        )
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(msg, ephemeral=True)
+
+    @discord.ui.button(label="Отмена", emoji="✖️", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("❌ Отменено.", ephemeral=True)
 
 
 # ==========================================

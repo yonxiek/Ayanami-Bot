@@ -630,6 +630,74 @@ class Database:
         await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ?', (guild_id,))
         await self.conn.commit()
 
+    async def clear_message_stats(self, guild_id: str):
+        await self.conn.execute('UPDATE users SET total_messages = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('UPDATE weekly_stats SET messages = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_voice_stats(self, guild_id: str):
+        await self.conn.execute('UPDATE users SET total_voice_minutes = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('UPDATE weekly_stats SET voice_minutes = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_command_stats(self, guild_id: str):
+        await self.conn.execute('UPDATE users SET total_commands = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('UPDATE weekly_stats SET commands = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_weekly_stats(self, guild_id: str):
+        await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_reputation(self, guild_id: str):
+        await self.conn.execute('UPDATE users SET reputation = 0 WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_achievements(self, guild_id: str):
+        await self.conn.execute('DELETE FROM achievements WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_duel_stats(self, guild_id: str):
+        await self.conn.execute('DELETE FROM duel_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_game_scores(self, guild_id: str):
+        await self.conn.execute('DELETE FROM game_scores WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_all_activity(self, guild_id: str):
+        await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute(
+            'UPDATE users SET total_messages = 0, total_voice_minutes = 0, total_commands = 0, '
+            'reputation = 0, exp = 0, level = 1, raids_attended = 0 WHERE guild_id = ?',
+            (guild_id,)
+        )
+        await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM achievements WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM duel_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM game_scores WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_all_data(self, guild_id: str):
+        guild_tables = [
+            'users', 'mod_stats', 'warns', 'temporary_bans', 'mod_notes', 'level_roles',
+            'bounties', 'events', 'scheduled_tasks', 'security_warnings', 'game_scores',
+            'daily_quests', 'user_quests', 'shop_items', 'user_inventory', 'user_titles',
+            'user_activities', 'daily_rewards', 'random_quest_pool', 'random_quest_config',
+            'temporary_roles', 'xp_boosts', 'reminders', 'achievements', 'duel_stats',
+            'weekly_stats', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
+            'user_cards', 'ai_moderation_log', 'server_events'
+        ]
+        for table in guild_tables:
+            await self.conn.execute(f'DELETE FROM {table} WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM poll_votes WHERE poll_id IN (SELECT id FROM polls WHERE guild_id = ?)', (guild_id,))
+        await self.conn.execute('DELETE FROM event_rsvps WHERE event_id IN (SELECT id FROM server_events WHERE guild_id = ?)', (guild_id,))
+        await self.conn.execute('DELETE FROM raids_v3', ())
+        await self.conn.execute('DELETE FROM raid_attendance', ())
+        await self.conn.execute('DELETE FROM guild_config WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
     async def get_quest_progress_stats(self, guild_id: str) -> dict:
         cursor = await self.conn.execute(
             'SELECT quest_id, COUNT(*) as total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as done '
