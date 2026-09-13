@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from db import Database
+from cogs.lottery import _format_ends as _lottery_ends
 from ui_components import AyanamiUI, Colors
 
 
@@ -18,7 +19,7 @@ class ShopView(discord.ui.View):
         self.page = page
         self.per_page = 5
 
-    def update_buttons(self, items, cases):
+    def update_buttons(self, items, cases, lottery=None):
         self.clear_items()
         start = self.page * self.per_page
         end = start + self.per_page
@@ -50,6 +51,22 @@ class ShopView(discord.ui.View):
             sel.callback = self.case_callback
             self.add_item(sel)
 
+        if lottery is not None:
+            lot_options = [
+                discord.SelectOption(label="Статус лотереи", value="lottery_status", emoji="📊"),
+            ]
+            if lottery.get("status") == "active":
+                lot_options.append(discord.SelectOption(label="Купить билет", value="lottery_buy", emoji="🎟"))
+            lot_sel = discord.ui.Select(
+                placeholder="🎟 Лотерея...",
+                min_values=1,
+                max_values=1,
+                row=3,
+                options=lot_options,
+            )
+            lot_sel.callback = self.lottery_callback
+            self.add_item(lot_sel)
+
         if self.page > 0:
             btn = discord.ui.Button(label="◀️ Назад", style=discord.ButtonStyle.gray, custom_id="shop_prev", row=1)
             btn.callback = self.prev_page
@@ -74,14 +91,27 @@ class ShopView(discord.ui.View):
         case_id = int(interaction.data["values"][0])
         await self.cog.execute_open_case(interaction, case_id)
 
+    async def lottery_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("Не ваше меню.", ephemeral=True)
+        val = interaction.data["values"][0]
+        cog = interaction.client.get_cog("Lottery")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Лотерея» выключен.", ephemeral=True)
+        if val == "lottery_buy":
+            return await interaction.response.send_modal(LotteryBuyModal())
+        await interaction.response.defer(ephemeral=True)
+        await cog.lottery_status(interaction)
+
     async def prev_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("Не ваше меню.", ephemeral=True)
         self.page -= 1
         items = await self.cog.db.get_shop_items(self.guild_id)
         cases = await self.cog._get_cases(self.guild_id)
-        self.update_buttons(items, cases)
-        embed = self.cog.build_shop_embed(items, cases, self.page, self.per_page)
+        lottery = await self.cog._get_lottery(self.guild_id)
+        self.update_buttons(items, cases, lottery)
+        embed = self.cog.build_shop_embed(items, cases, self.page, self.per_page, lottery)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def next_page(self, interaction: discord.Interaction):
@@ -90,9 +120,27 @@ class ShopView(discord.ui.View):
         self.page += 1
         items = await self.cog.db.get_shop_items(self.guild_id)
         cases = await self.cog._get_cases(self.guild_id)
-        self.update_buttons(items, cases)
-        embed = self.cog.build_shop_embed(items, cases, self.page, self.per_page)
+        lottery = await self.cog._get_lottery(self.guild_id)
+        self.update_buttons(items, cases, lottery)
+        embed = self.cog.build_shop_embed(items, cases, self.page, self.per_page, lottery)
         await interaction.response.edit_message(embed=embed, view=self)
+
+
+class LotteryBuyModal(discord.ui.Modal, title="🎟 Купить билеты"):
+    count = discord.ui.TextInput(
+        label="Количество билетов", placeholder="1", max_length=4, default="1"
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Lottery")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Лотерея» выключен.", ephemeral=True)
+        try:
+            count = int(self.count.value)
+        except ValueError:
+            count = 1
+        await interaction.response.defer(ephemeral=True)
+        await cog.lottery_buy(interaction, count)
 
 
 class Shop(commands.Cog):
@@ -101,7 +149,7 @@ class Shop(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    def build_shop_embed(self, items, cases=None, page=0, per_page=5):
+    def build_shop_embed(self, items, cases=None, page=0, per_page=5, lottery=None):
         start = page * per_page
         end = start + per_page
         page_items = items[start:end]
@@ -132,6 +180,14 @@ class Shop(commands.Cog):
             case_lines = [f"> {c['emoji']} **{c['name']}** — {c['price']} {AyanamiUI.E_RP}" for c in cases]
             desc += "### 🎁 Кейсы\n" + "\n".join(case_lines) + "\n\n*Открыть можно через меню ниже*"
 
+        if lottery is not None and lottery.get("status") == "active":
+            desc += (
+                f"\n### 🎟 Лотерея\n"
+                f"> 💸 Билет: **{lottery['ticket_price']}** {AyanamiUI.E_RP} • 💰 Фонд: **{lottery['prize_pool']}**\n"
+                f"> ⏳ Розыгрыш: {_lottery_ends(lottery['ends_at'])}\n"
+                f"*Билеты — через меню ниже*"
+            )
+
         if not desc:
             desc = "*Магазин пуст*"
 
@@ -148,6 +204,9 @@ class Shop(commands.Cog):
             'SELECT id, name, emoji, price, enabled FROM cases WHERE guild_id = ? AND enabled = 1 ORDER BY id',
             (guild_id,))
         return [dict(row) for row in await cursor.fetchall()]
+
+    async def _get_lottery(self, guild_id: str) -> dict | None:
+        return await self.db.get_lottery(guild_id)
 
     async def _get_case(self, guild_id: str, case_id: int) -> dict | None:
         cursor = await self.db.conn.execute(
@@ -269,8 +328,9 @@ class Shop(commands.Cog):
         guild_id = str(interaction.guild.id)
         items = await self.db.get_shop_items(guild_id)
         cases = await self._get_cases(guild_id)
+        lottery = await self._get_lottery(guild_id)
 
-        if not items and not cases:
+        if not items and not cases and not (lottery and lottery["status"] == "active"):
             embed = discord.Embed(
                 title="Магазин",
                 description="Магазин пуст. Администраторы могут добавить товары и кейсы через `/setup`.",
@@ -279,8 +339,8 @@ class Shop(commands.Cog):
             return await interaction.followup.send(embed=embed)
 
         view = ShopView(self, guild_id, interaction.user.id)
-        view.update_buttons(items, cases)
-        embed = self.build_shop_embed(items, cases)
+        view.update_buttons(items, cases, lottery)
+        embed = self.build_shop_embed(items, cases, lottery=lottery)
         await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="buy", description="Купить товар по ID")

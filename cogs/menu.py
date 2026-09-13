@@ -16,6 +16,7 @@ COLORS = {
     "Кланы": 0xe74c3c,
     "GitHub": 0x5865f2,
     "Напоминания": 0xf1c40f,
+    "Дни рождения": 0xf06292,
 }
 
 
@@ -378,6 +379,29 @@ class RemindRemoveModal(discord.ui.Modal, title="❌ Удалить напоми
         await cog.remind_remove(interaction, remind_id)
 
 
+class BirthdaySetModal(discord.ui.Modal, title="🎂 День рождения"):
+    день = discord.ui.TextInput(
+        label="День (1–31)", placeholder="12", max_length=2
+    )
+    месяц = discord.ui.TextInput(
+        label="Месяц (1–12)", placeholder="8", max_length=2
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Birthdays")
+        if not cog:
+            return await interaction.response.send_message(
+                "❌ Модуль недоступен.", ephemeral=True
+            )
+        try:
+            день, месяц = int(self.день.value), int(self.месяц.value)
+        except ValueError:
+            return await interaction.response.send_message(
+                "❌ День и месяц должны быть числами.", ephemeral=True
+            )
+        await cog.set_bday(interaction, день, месяц)
+
+
 # ─────────────────────────────────────────────
 #  View-ы
 # ─────────────────────────────────────────────
@@ -411,6 +435,11 @@ class MenuView(discord.ui.View):
             discord.SelectOption(
                 label="Напоминания", description="Личные напоминания", emoji="⏰"
             ),
+            discord.SelectOption(
+                label="Дни рождения",
+                description="Дата и поздравления в праздник",
+                emoji="🎂",
+            ),
         ],
     )
     async def select_callback(
@@ -424,6 +453,7 @@ class MenuView(discord.ui.View):
             "Кланы": "Создавайте кланы, вступайте, пополняйте казну, следите за топом.",
             "GitHub": "Смотрите последние коммиты, Pull Requests и Issues репозитория.",
             "Напоминания": "Создавайте личные напоминания и управляйте ими.",
+            "Дни рождения": "Сохрани дату рождения — в праздник Ayanami поздравит и выдаст роль.",
         }[category]
         embed = discord.Embed(title=category, description=desc, color=COLORS[category])
         embed.set_footer(text="Выберите действие ниже")
@@ -462,6 +492,10 @@ class CategoryView(discord.ui.View):
             self._add_btn("Создать", "⏰", discord.ButtonStyle.success, self._remind_create)
             self._add_btn("Список", "📋", discord.ButtonStyle.secondary, self._remind_list)
             self._add_btn("Удалить", "❌", discord.ButtonStyle.danger, self._remind_remove)
+        elif category == "Дни рождения":
+            self._add_btn("Установить", "🎂", discord.ButtonStyle.success, self._bday_set)
+            self._add_btn("Моя дата", "ℹ️", discord.ButtonStyle.secondary, self._bday_info)
+            self._add_btn("Удалить", "❌", discord.ButtonStyle.danger, self._bday_remove)
 
         back = discord.ui.Button(
             label="Назад", emoji="◀️", style=discord.ButtonStyle.grey, row=4
@@ -624,6 +658,24 @@ class CategoryView(discord.ui.View):
     async def _remind_remove(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RemindRemoveModal())
 
+    # ── Birthdays ──
+    async def _bday_set(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(BirthdaySetModal())
+
+    async def _bday_info(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Birthdays")
+        if cog:
+            await cog.bday_info(interaction)
+        else:
+            await self._not_found(interaction, "Birthdays")
+
+    async def _bday_remove(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Birthdays")
+        if cog:
+            await cog.remove_bday(interaction)
+        else:
+            await self._not_found(interaction, "Birthdays")
+
 
 class Menu(commands.Cog):
     def __init__(self, bot):
@@ -632,7 +684,7 @@ class Menu(commands.Cog):
 
     @app_commands.command(
         name="menu",
-        description="Меню функций — голосования, события, карточки, кланы, GitHub, напоминания",
+        description="Меню функций — голосования, события, карточки, кланы, GitHub, напоминания, дни рождения",
     )
     async def menu(self, interaction: discord.Interaction):
         embed = discord.Embed(

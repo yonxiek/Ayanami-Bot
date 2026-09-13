@@ -1,10 +1,9 @@
-"""Дни рождения: /setbday, авто-поздравление и роль в назначенный день."""
+"""Дни рождения: дата задаётся в /menu, поздравление и роль в назначенный день; настройка — в /setup."""
 
 import asyncio
 from datetime import datetime, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from db import Database
@@ -89,8 +88,7 @@ class Birthdays(commands.Cog):
                         except discord.Forbidden:
                             pass
 
-    @app_commands.command(name="setbday", description="Сохранить свою дату рождения (ДД ММ)")
-    async def setbday_cmd(self, interaction: discord.Interaction, день: int, месяц: int):
+    async def set_bday(self, interaction: discord.Interaction, день: int, месяц: int):
         if not (1 <= день <= 31 and 1 <= месяц <= 12):
             return await interaction.response.send_message(
                 "❌ Укажи корректные числа: день 1–31, месяц 1–12.", ephemeral=True
@@ -100,35 +98,45 @@ class Birthdays(commands.Cog):
             f"✅ Дата рождения сохранена: **{день:02d}.{месяц:02d}**", ephemeral=True
         )
 
-    @app_commands.command(name="removebday", description="Удалить свою дату рождения")
-    async def removebday_cmd(self, interaction: discord.Interaction):
+    async def remove_bday(self, interaction: discord.Interaction):
         await self.db.remove_birthday(str(interaction.guild.id), str(interaction.user.id))
         await interaction.response.send_message("✅ Дата рождения удалена.", ephemeral=True)
 
-    @app_commands.command(name="bdaychannel", description="Канал для поздравлений (роль модератора)")
-    @app_commands.default_permissions(manage_channels=True)
-    async def bdaychannel_cmd(self, interaction: discord.Interaction, канал: discord.TextChannel):
-        config = await self.db.get_guild_config(str(interaction.guild.id))
-        config["birthdays_channel_id"] = str(канал.id)
-        await self.db.update_guild_config(str(interaction.guild.id), **config)
+    async def bday_info(self, interaction: discord.Interaction):
+        bday = await self.db.get_birthday(str(interaction.guild.id), str(interaction.user.id))
+        if not bday:
+            return await interaction.response.send_message(
+                "🎂 Дата рождения не задана. Нажми **Установить**, чтобы добавить.", ephemeral=True
+            )
         await interaction.response.send_message(
-            f"✅ Канал поздравлений: {канал.mention}", ephemeral=True
+            f"🎂 Твоя дата рождения: **{bday['day']:02d}.{bday['month']:02d}**", ephemeral=True
         )
 
-    @app_commands.command(name="bdayrole", description="Роль на день рождения (роль модератора)")
-    @app_commands.default_permissions(manage_channels=True)
-    async def bdayrole_cmd(self, interaction: discord.Interaction, роль: discord.Role):
+    async def set_bday_channel(self, interaction: discord.Interaction, channel_id: str):
+        channel = interaction.guild.get_channel(int(channel_id)) if channel_id.strip().isdigit() else None
+        if not channel:
+            return await interaction.response.send_message(
+                "❌ Канал не найден (нужен ID текстового канала).", ephemeral=True
+            )
         config = await self.db.get_guild_config(str(interaction.guild.id))
-        config["birthdays_role_id"] = str(роль.id)
+        config["birthdays_channel_id"] = str(channel.id)
         await self.db.update_guild_config(str(interaction.guild.id), **config)
         await interaction.response.send_message(
-            f"✅ Роль на день рождения: {роль.mention}", ephemeral=True
+            f"✅ Канал поздравлений: {channel.mention}", ephemeral=True
         )
 
-    @commands.command(name="setbday")
-    async def setbday_prefix(self, ctx, день: int, месяц: int):
-        from prefix_adapter import InteractionAdapter
-        await self.setbday_cmd.callback(self, InteractionAdapter(ctx), день, месяц)
+    async def set_bday_role(self, interaction: discord.Interaction, role_id: str):
+        role = interaction.guild.get_role(int(role_id)) if role_id.strip().isdigit() else None
+        if not role:
+            return await interaction.response.send_message(
+                "❌ Роль не найдена (нужен ID роли).", ephemeral=True
+            )
+        config = await self.db.get_guild_config(str(interaction.guild.id))
+        config["birthdays_role_id"] = str(role.id)
+        await self.db.update_guild_config(str(interaction.guild.id), **config)
+        await interaction.response.send_message(
+            f"✅ Роль на день рождения: {role.mention}", ephemeral=True
+        )
 
 
 async def setup(bot):

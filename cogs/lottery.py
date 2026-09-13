@@ -1,8 +1,7 @@
-"""Лотерея: игроки покупают билеты, фонд копится, победитель забирает всё.
+"""Лотерея: билеты покупаются в /shop, розыгрыш автоматический; запуск и управление — в /setup.
 
-- `/lottery_start <цена> <длительность>` — запуск (длительность как у напоминаний: 30м, 2ч, 1д)
-- `/lottery_buy <количество>` — покупка билетов
-- `/lottery` — статус лотереи
+- `/shop` → «Лотерея» — покупка билетов и статус
+- `/setup` → «Лотерея» — запуск, статус, отмена
 """
 
 import asyncio
@@ -10,7 +9,6 @@ import random
 from datetime import datetime, timezone
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from cogs.reminders import parse_duration
@@ -88,12 +86,11 @@ class Lottery(commands.Cog):
             except discord.HTTPException:
                 pass
 
-    @app_commands.command(name="lottery", description="Статус активной лотереи на сервере")
-    async def lottery_cmd(self, interaction: discord.Interaction):
+    async def lottery_status(self, interaction: discord.Interaction, ephemeral: bool = True):
         lottery = await self.db.get_lottery(str(interaction.guild.id))
         if not lottery or lottery["status"] != "active":
-            return await interaction.response.send_message(
-                "🎟 В данный момент лотерея не активна.", ephemeral=True
+            return await interaction.followup.send(
+                "🎟 В данный момент лотерея не активна. Запуск — в `/setup` → «Лотерея».", ephemeral=True
             )
         tickets = await self.db.get_lottery_tickets(str(interaction.guild.id))
         participants = sum(1 for t in tickets if t["tickets"] > 0)
@@ -107,15 +104,14 @@ class Lottery(commands.Cog):
         embed.add_field(name="👥 Участников", value=str(participants), inline=True)
         embed.add_field(name="⏳ Розыгрыш", value=_format_ends(lottery["ends_at"]), inline=False)
         embed.add_field(name="🎫 Ваших билетов", value=str(my["tickets"] if my else 0), inline=True)
-        await interaction.response.send_message(
-            embed=embed,
-            content="Купить: `/lottery_buy <количество>`",
-            ephemeral=False,
-        )
+        embed.set_footer(text="Билеты покупаются в магазине: /shop → «Лотерея»")
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
 
-    @app_commands.command(name="lottery_start", description="Запустить лотерею (роль модератора)")
-    @app_commands.default_permissions(manage_channels=True)
-    async def lottery_start_cmd(self, interaction: discord.Interaction, цена_билета: int, длительность: str):
+    async def lottery_start(self, interaction: discord.Interaction, цена_билета: str, длительность: str):
+        try:
+            цена_билета = int(цена_билета)
+        except (TypeError, ValueError):
+            return await interaction.response.send_message("❌ Цена билета должна быть числом.", ephemeral=True)
         if цена_билета < 1:
             return await interaction.response.send_message("❌ Цена билета должна быть ≥ 1.", ephemeral=True)
         delta = parse_duration(длительность)
@@ -135,37 +131,39 @@ class Lottery(commands.Cog):
             description=(
                 f"**Цена билета:** {цена_билета} монет\n"
                 f"**Розыгрыш:** {_format_ends(ends_at)}\n\n"
-                f"Покупай билеты: `/lottery_buy` и забери весь фонд 🏆"
+                f"Билеты покупаются в `/shop` → «Лотерея». Забери весь фонд 🏆"
             ),
             color=Colors.SUCCESS,
         )
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="lottery_buy", description="Купить билеты лотереи")
-    async def lottery_buy_cmd(self, interaction: discord.Interaction, количество: int = 1):
+    async def lottery_buy(self, interaction: discord.Interaction, количество: int = 1):
         количество = max(1, min(количество, 1000))
         lottery = await self.db.get_lottery(str(interaction.guild.id))
         if not lottery or lottery["status"] != "active":
-            return await interaction.response.send_message(
-                "❌ Лотерея не активна. Запусти через `/lottery_start`.", ephemeral=True
+            return await interaction.followup.send(
+                "❌ Лотерея не активна. Запуск — в `/setup` → «Лотерея».", ephemeral=True
             )
         ok = await self.db.buy_lottery_tickets(
             str(interaction.guild.id), str(interaction.user.id), количество, lottery["ticket_price"]
         )
         if not ok:
-            return await interaction.response.send_message(
-                f"❌ Недостаточно монет. Нужно: {количество * lottery['ticket_price']}.",
-                ephemeral=True,
+            return await interaction.followup.send(
+                f"❌ Недостаточно монет. Нужно: {количество * lottery['ticket_price']}.", ephemeral=True
             )
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"✅ Куплено билетов: **{количество}** ({количество * lottery['ticket_price']} монет). Удачи! 🍀",
             ephemeral=True,
         )
 
-    @commands.command(name="lottery")
-    async def lottery_prefix(self, ctx):
-        from prefix_adapter import InteractionAdapter
-        await self.lottery_cmd.callback(self, InteractionAdapter(ctx))
+    async def lottery_cancel(self, interaction: discord.Interaction):
+        lottery = await self.db.get_lottery(str(interaction.guild.id))
+        if not lottery or lottery["status"] != "active":
+            return await interaction.response.send_message("❌ Активной лотереи сейчас нет.", ephemeral=True)
+        await self.db.end_lottery(str(interaction.guild.id))
+        await interaction.response.send_message(
+            "⛔ Активная лотерея отменена без розыгрыша.", ephemeral=True
+        )
 
 
 async def setup(bot):

@@ -100,6 +100,8 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
             discord.SelectOption(label="Кейсы", value="cases", emoji="🎁", description="Кейсы с дропом ролей, карточек и монет"),
             discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
+            discord.SelectOption(label="Дни рождения", value="birthdays", emoji="🎂", description="Канал поздравлений и роль на праздник"),
+            discord.SelectOption(label="Лотерея", value="lottery", emoji="🎟", description="Запуск и управление лотереей"),
         ]
         extra_options = [
             discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
@@ -144,6 +146,8 @@ class DashboardView(discord.ui.LayoutView):
             "cards": lambda: SetupCardsView(self.cog, db, self.guild_id),
             "cases": lambda: SetupCasesView(self.cog, db, self.guild_id),
             "github": lambda: SetupGithubView(self.cog, db, self.guild_id),
+            "birthdays": lambda: SetupBirthdaysView(self.cog, db, self.guild_id),
+            "lottery": lambda: SetupLotteryView(self.cog, db, self.guild_id),
             "webhooks": lambda: SetupWebhookView(self.cog, db, self.guild_id),
             "data": lambda: SetupDataView(self.cog, db, self.guild_id),
         }
@@ -4066,6 +4070,121 @@ class SetupGithubView(discord.ui.View):
         )
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class SetupBirthdaysView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Канал поздравлений", emoji="📢", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BirthdayChannelModal())
+
+    @discord.ui.button(label="Роль на праздник", emoji="🎖️", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BirthdayRoleModal())
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        channel = (interaction.guild.get_channel(int(config["birthdays_channel_id"]))
+                   if config.get("birthdays_channel_id") else None)
+        role = (interaction.guild.get_role(int(config["birthdays_role_id"]))
+                if config.get("birthdays_role_id") else None)
+        lines = [
+            "### Дни рождения",
+            "",
+            f"🎂 Канал поздравлений: {channel.mention if channel else 'не задан'}",
+            f"🎖️ Роль на праздник: {role.mention if role else 'не задана'}",
+            "",
+            "**Для игроков:**",
+            "• Дата задаётся в `/menu` → «Дни рождения»",
+            "• В праздник бот поздравит в канале и выдаст роль",
+        ]
+        embed = discord.Embed(title="🎂 Дни рождения — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class BirthdayChannelModal(discord.ui.Modal, title="📢 Канал поздравлений"):
+    channel_id = discord.ui.TextInput(label="ID канала", placeholder="1234567890", max_length=30)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Birthdays")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Дни рождения» выключен.", ephemeral=True)
+        await cog.set_bday_channel(interaction, self.channel_id.value)
+
+
+class BirthdayRoleModal(discord.ui.Modal, title="🎖️ Роль на праздник"):
+    role_id = discord.ui.TextInput(label="ID роли", placeholder="1234567890", max_length=30)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Birthdays")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Дни рождения» выключен.", ephemeral=True)
+        await cog.set_bday_role(interaction, self.role_id.value)
+
+
+class SetupLotteryView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Запустить", emoji="🚀", style=discord.ButtonStyle.success, row=0)
+    async def btn_start(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(LotteryStartModal())
+
+    @discord.ui.button(label="Статус", emoji="📊", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("Lottery")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Лотерея» выключен.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await cog.lottery_status(interaction)
+
+    @discord.ui.button(label="Отменить", emoji="⛔", style=discord.ButtonStyle.danger, row=1)
+    async def btn_cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("Lottery")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Лотерея» выключен.", ephemeral=True)
+        await cog.lottery_cancel(interaction)
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        lines = [
+            "### Лотерея",
+            "",
+            "**Для админов:**",
+            "• «Запустить» — цена билета и длительность (30м / 2ч / 1д)",
+            "• «Отменить» — остановить текущую лотерею без розыгрыша",
+            "• Статус и фонд — «Статус»",
+            "",
+            "**Для игроков:**",
+            "• Билеты покупаются в `/shop` → раздел «Лотерея»",
+            "• В розыгрыше победитель забирает весь призовой фонд",
+        ]
+        embed = discord.Embed(title="🎟 Лотерея — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class LotteryStartModal(discord.ui.Modal, title="🚀 Запустить лотерею"):
+    price = discord.ui.TextInput(label="Цена билета (монеты)", placeholder="25", max_length=10)
+    duration = discord.ui.TextInput(label="Длительность (30м / 2ч / 1д)", placeholder="1ч", max_length=10)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Lottery")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль «Лотерея» выключен.", ephemeral=True)
+        await cog.lottery_start(interaction, self.price.value, self.duration.value)
 
 
 async def _post_webhook(url: str, payload: dict) -> tuple[int, str]:
