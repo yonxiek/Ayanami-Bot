@@ -135,12 +135,6 @@ class Moderation(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="clearmember", description="Очистить сообщения отдельного участника в этом канале")
-    @app_commands.describe(member="Участник", amount="Сколько сообщений проверить")
-    @app_commands.default_permissions(manage_messages=True)
-    async def clearmember(self, interaction: discord.Interaction, member: discord.Member, amount: int = 100):
-        await self.clear.callback(self, interaction, amount, member)
-
     @app_commands.command(name="modstats", description="Статистика модератора")
     @app_commands.describe(moderator="Модератор, чью статистику показать")
     async def modstats(self, interaction: discord.Interaction, moderator: discord.Member = None):
@@ -1044,12 +1038,6 @@ class Moderation(commands.Cog):
     @commands.command(name="clear")
     @commands.has_permissions(manage_messages=True)
     async def clear_prefix(self, ctx, amount: int, member: MemberSearch = None):
-        from prefix_adapter import InteractionAdapter
-        await self.clear.callback(self, InteractionAdapter(ctx), amount, member)
-
-    @commands.command(name="clearmember")
-    @commands.has_permissions(manage_messages=True)
-    async def clearmember_prefix(self, ctx, member: MemberSearch, amount: int = 100):
         from prefix_adapter import InteractionAdapter
         await self.clear.callback(self, InteractionAdapter(ctx), amount, member)
 
