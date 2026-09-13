@@ -788,7 +788,7 @@ class Logging(VoiceTrackerMixin, commands.Cog):
     @commands.Cog.listener()
     async def on_moderation_log(self, action: str, guild: discord.Guild, user, moderator, reason: str = None, duration: str = None):
         event_map = {
-            "ban": "pun_ban", "unban": "pun_unban",
+            "ban": "pun_ban", "tempban": "pun_ban", "unban": "pun_unban",
             "kick": "pun_kick",
             "mute": "pun_mute", "unmute": "pun_unmute",
             "warn": "pun_warn", "unwarn": "pun_unwarn",
@@ -801,6 +801,7 @@ class Logging(VoiceTrackerMixin, commands.Cog):
 
         color_map = {
             "ban": discord.Color.dark_red(),
+            "tempban": discord.Color.dark_red(),
             "unban": discord.Color.green(),
             "kick": discord.Color.orange(),
             "mute": discord.Color.dark_purple(),
@@ -814,6 +815,7 @@ class Logging(VoiceTrackerMixin, commands.Cog):
         }
         title_map = {
             "ban": "User Banned",
+            "tempban": "User Temporarily Banned",
             "unban": "User Unbanned",
             "kick": "User Kicked",
             "mute": "User Muted",

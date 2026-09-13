@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from db import Database
 from prefix_adapter import MemberSearch, UserSearch
@@ -92,6 +92,61 @@ class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
+        self._raid_active = set()
+
+    async def cog_load(self):
+        if not self._tempban_loop.is_running():
+            self._tempban_loop.start()
+        asyncio.create_task(self._sweep_temp_bans())
+
+    async def cog_unload(self):
+        if self._tempban_loop.is_running():
+            self._tempban_loop.cancel()
+
+    @tasks.loop(hours=1)
+    async def _tempban_loop(self):
+        await self._sweep_temp_bans()
+
+    async def _sweep_temp_bans(self):
+        try:
+            expired = await self.db.remove_expired_temporary_bans()
+        except Exception:
+            return
+        for ban in expired:
+            guild = self.bot.get_guild(int(ban['guild_id']))
+            if not guild:
+                continue
+            user_id = int(ban['user_id'])
+            try:
+                await guild.unban(discord.Object(id=user_id), reason="Временный бан истёк")
+                self.bot.dispatch("moderation_log", "unban", guild, discord.Object(id=user_id), None,
+                                  reason="Авторазбан: срок временного бана истёк")
+            except discord.NotFound:
+                pass
+            except Exception:
+                pass
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        asyncio.create_task(self._sweep_temp_bans())
+        for guild in self.bot.guilds:
+            try:
+                config = await self.db.get_guild_config(str(guild.id))
+                if config.get("raid_mode"):
+                    self._raid_active.add(guild.id)
+            except Exception:
+                pass
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if member.guild.id not in self._raid_active or member.bot:
+            return
+        account_age_days = (discord.utils.utcnow() - member.created_at).days
+        if account_age_days < 7:
+            try:
+                await member.ban(reason="Анти-рэйд: аккаунт моложе 7 дней")
+            except Exception:
+                pass
 
     async def get_config_value(self, guild_id: int, key: str, default=None):
         config = await self.db.get_guild_config(str(guild_id))
@@ -144,7 +199,7 @@ class Moderation(commands.Cog):
         fields_map = {
             "mute": "Муты", "unmute": "Снятие мутов",
             "warn": "Варны", "unwarn": "Снятие варнов",
-            "kick": "Кики", "ban": "Баны", "unban": "Разбаны",
+            "kick": "Кики", "ban": "Баны", "tempban": "Временные баны", "unban": "Разбаны",
             "blacklist": "ЧС", "unblacklist": "Снятие ЧС",
             "strike": "Страйки", "unstrike": "Снятие страйков",
             "report_resolved": "Закрытые жалобы"
@@ -670,12 +725,154 @@ class Moderation(commands.Cog):
             await self.send_punishment_notice(member, "забанены", reason, interaction.guild)
             await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="tempban", description="Временный бан с авто-разбаном")
+    @app_commands.describe(
+        member="Участник",
+        duration="Длительность (например 10s, 5m, 2h, 1d)",
+        reason="Причина бана",
+        clear_days="Очистить сообщения за последние N дней (0-7)",
+    )
+    @app_commands.choices(clear_days=[
+        app_commands.Choice(name="Не очищать сообщения", value=0),
+        app_commands.Choice(name="За посл. 1 день", value=1),
+        app_commands.Choice(name="За посл. 2 дня", value=2),
+        app_commands.Choice(name="За посл. 3 дня", value=3),
+        app_commands.Choice(name="За посл. 4 дня", value=4),
+        app_commands.Choice(name="За посл. 5 дней", value=5),
+        app_commands.Choice(name="За посл. 6 дней", value=6),
+        app_commands.Choice(name="За посл. 7 дней", value=7),
+    ])
+    @app_commands.default_permissions(ban_members=True)
+    async def tempban(self, interaction: discord.Interaction, member: discord.Member, duration: str,
+                      reason: str = "Не указана", clear_days: int = 0):
+        delta = parse_duration(duration)
+        if not delta:
+            error_embed = discord.Embed(color=Colors.ERROR, description="❌ Неверный формат. Используйте: `10s`, `5m`, `2h`, `1d`.")
+            return await interaction.response.send_message(embed=error_embed, ephemeral=True)
+
+        await interaction.response.defer()
+        clear_days = max(0, min(7, clear_days))
+        until = discord.utils.utcnow() + delta
+        try:
+            await interaction.guild.ban(member, reason=f"{reason} (временный, до <t:{int(until.timestamp())}:F>)",
+                                        delete_message_days=clear_days)
+        except discord.Forbidden:
+            return await interaction.followup.send("❌ Недостаточно прав для бана этого пользователя.")
+        except Exception as e:
+            return await interaction.followup.send(f"❌ Ошибка: {e}")
+
+        await self.db.add_temporary_ban(str(interaction.guild.id), str(member.id), str(interaction.user.id),
+                                        reason, until.isoformat())
+        await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "tempban", 1)
+        self.bot.dispatch("moderation_log", "tempban", interaction.guild, member, interaction.user,
+                          reason=reason, duration=AyanamiUI.format_duration_ru(duration))
+
+        embed = discord.Embed(color=discord.Color(0x2b2d31))
+        embed.set_author(name="Временный бан", icon_url=Icons.BAN)
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        if interaction.guild.banner:
+            embed.set_image(url=interaction.guild.banner.url)
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
+        embed.add_field(name="Модератор", value=mod_line, inline=False)
+        embed.add_field(name="Участник", value=user_line, inline=False)
+        embed.add_field(name="Срок", value=f"<t:{int(until.timestamp())}:F> (<t:{int(until.timestamp())}:R>)", inline=False)
+        if clear_days:
+            embed.add_field(name="Очищено сообщений", value=f"за {clear_days} дн.", inline=False)
+        embed.add_field(name="Причина", value=reason, inline=False)
+        embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await self.send_punishment_notice(member, "забанены временно", f"{reason} (до <t:{int(until.timestamp())}:F>)", interaction.guild)
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="modstop", description="Рейтинг модераторов по количеству действий")
+    async def modstop(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        cursor = await self.db.conn.execute(
+            'SELECT moderator_id, SUM(count) as total FROM mod_stats '
+            'WHERE guild_id = ? GROUP BY moderator_id ORDER BY total DESC LIMIT 10',
+            (str(interaction.guild.id),))
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.followup.send("❌ Статистика модераторов пока пуста.", ephemeral=True)
+
+        medals = ["🥇", "🥈", "🥉"]
+        lines = []
+        for i, r in enumerate(rows):
+            mod = interaction.guild.get_member(int(r['moderator_id']))
+            name = mod.mention if mod else f"<@{r['moderator_id']}>"
+            prefix = medals[i] if i < 3 else f"**#{i + 1}**"
+            lines.append(f"{prefix} {name} — **{r['total']}** действий")
+
+        embed = discord.Embed(title="🏆 Рейтинг модераторов", description="\n".join(lines), color=discord.Color(0x2b2d31))
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="antiraid", description="Включить/выключить анти-рэйд режим (лок каналов + защита входов)")
+    @app_commands.describe(mode="Режим")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Включить", value="enable"),
+        app_commands.Choice(name="Выключить", value="disable"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def antiraid(self, interaction: discord.Interaction, mode: app_commands.Choice[str]):
+        try:
+            await interaction.response.defer()
+        except (discord.NotFound, discord.HTTPException):
+            return
+
+        if mode.value == "enable":
+            if interaction.guild.id in self._raid_active:
+                return await interaction.followup.send("⚙️ Анти-рэйд уже включён.", ephemeral=True)
+            restore = {}
+            default_role = interaction.guild.default_role
+            for ch in interaction.guild.channels:
+                try:
+                    ov = ch.overwrites_for(default_role)
+                    restore[str(ch.id)] = [ov.send_messages, ov.connect]
+                    if isinstance(ch, (discord.TextChannel, discord.ForumChannel, discord.CategoryChannel)):
+                        await ch.set_permissions(default_role, send_messages=False, reason="Анти-рэйд")
+                    else:
+                        await ch.set_permissions(default_role, connect=False, reason="Анти-рэйд")
+                except Exception:
+                    continue
+            self._raid_active.add(interaction.guild.id)
+            await self.db.update_guild_config(str(interaction.guild.id), raid_mode=True, raid_prev_perms=restore)
+            self.bot.dispatch("settings_log", interaction.guild, interaction.user, "Анти-рэйд",
+                              "Анти-рэйд режим **включён**: каналы залочены, входы защищены.")
+            return await interaction.followup.send("🚨 **Анти-рэйд включён.** Каналы залочены, новые аккаунты защищаются автоматически.")
+        else:
+            if interaction.guild.id not in self._raid_active:
+                return await interaction.followup.send("⚙️ Анти-рэйд уже выключен.", ephemeral=True)
+            config = await self.db.get_guild_config(str(interaction.guild.id))
+            restore = config.get("raid_prev_perms", {})
+            default_role = interaction.guild.default_role
+            for ch in interaction.guild.channels:
+                prev = restore.get(str(ch.id))
+                try:
+                    if prev is not None and len(prev) >= 2:
+                        await ch.set_permissions(default_role, send_messages=prev[0], connect=prev[1], reason="Конец анти-рэйда")
+                    elif isinstance(ch, (discord.TextChannel, discord.ForumChannel, discord.CategoryChannel)):
+                        await ch.set_permissions(default_role, send_messages=None, reason="Конец анти-рэйда")
+                    else:
+                        await ch.set_permissions(default_role, connect=None, reason="Конец анти-рэйда")
+                except Exception:
+                    continue
+            self._raid_active.discard(interaction.guild.id)
+            await self.db.update_guild_config(str(interaction.guild.id), raid_mode=False, raid_prev_perms={})
+            self.bot.dispatch("settings_log", interaction.guild, interaction.user, "Анти-рэйд",
+                              "Анти-рэйд режим **выключен**: права каналов восстановлены.")
+            return await interaction.followup.send("✅ **Анти-рэйд выключен.** Права каналов восстановлены.")
+
     @app_commands.command(name="unban", description="Разбанить участника")
     @app_commands.describe(member="Пользователь или его ID, которого нужно разбанить")
     @app_commands.default_permissions(ban_members=True)
     async def unban(self, interaction: discord.Interaction, member: discord.User, reason: str = "Не указана"):
 
         await interaction.guild.unban(member)
+        await self.db.remove_temporary_ban(str(interaction.guild.id), str(member.id))
         await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unban", 1)
         self.bot.dispatch("moderation_log", "unban", interaction.guild, member, interaction.user, reason=reason)
         
@@ -1121,6 +1318,24 @@ class Moderation(commands.Cog):
     async def unban_prefix(self, ctx, member: UserSearch, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
         await self.unban.callback(self, InteractionAdapter(ctx), member, reason)
+
+    @commands.command(name="tempban")
+    @commands.has_permissions(ban_members=True)
+    async def tempban_prefix(self, ctx, member: MemberSearch, duration: str, days: int = 0, *, reason: str = "Не указана"):
+        from prefix_adapter import InteractionAdapter
+        await self.tempban.callback(self, InteractionAdapter(ctx), member, duration, reason, days)
+
+    @commands.command(name="modstop")
+    async def modstop_prefix(self, ctx):
+        from prefix_adapter import InteractionAdapter
+        await self.modstop.callback(self, InteractionAdapter(ctx))
+
+    @commands.command(name="antiraid")
+    @commands.has_permissions(administrator=True)
+    async def antiraid_prefix(self, ctx, mode: str = "enable"):
+        from prefix_adapter import InteractionAdapter
+        status = mode.lower() == "enable" or mode.lower() == "on"
+        await self.antiraid.callback(self, InteractionAdapter(ctx), app_commands.Choice(name=mode, value="enable" if status else "disable"))
 
     @commands.command(name="blacklist")
     @commands.has_permissions(manage_roles=True)

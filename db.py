@@ -329,6 +329,22 @@ class Database:
                 response TEXT,
                 created_at TEXT,
                 UNIQUE(event_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                name TEXT,
+                emoji TEXT DEFAULT '🎁',
+                price INTEGER DEFAULT 0,
+                enabled INTEGER DEFAULT 1
+            )''',
+            '''CREATE TABLE IF NOT EXISTS case_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                case_id INTEGER,
+                item_type TEXT,
+                item_value TEXT,
+                drop_rate REAL DEFAULT 0.1
             )'''
         ]
         
@@ -718,7 +734,7 @@ class Database:
             'user_activities', 'daily_rewards', 'random_quest_pool', 'random_quest_config',
             'temporary_roles', 'xp_boosts', 'reminders', 'achievements', 'duel_stats',
             'weekly_stats', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
-            'user_cards', 'ai_moderation_log', 'server_events'
+            'user_cards', 'ai_moderation_log', 'server_events', 'cases', 'case_items'
         ]
         for table in guild_tables:
             await self.conn.execute(f'DELETE FROM {table} WHERE guild_id = ?', (guild_id,))

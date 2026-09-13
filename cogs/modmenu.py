@@ -92,6 +92,7 @@ class ModCategoryView(discord.ui.View):
                 ("unmute", "Анмут", "🔊"),
                 ("kick", "Кик", "👢"),
                 ("ban", "Бан", "🔨"),
+                ("tempban", "Временный бан", "⏳"),
                 ("unban", "Разбан", "🕊️"),
             ],
             "Каналы": [
@@ -171,6 +172,7 @@ class ModMenu(commands.Cog):
         "unmute": (("Участник", "@Имя", True, 40),),
         "kick": (("Участник", "@Имя", True, 40), ("Причина", "Не указана", False, 1024)),
         "ban": (("Участник или ID", "@Имя или ID", True, 40), ("Причина", "Не указана", False, 1024), ("Очистка сообщений", "Дней (0-7), по умолч. 0", False, 2)),
+        "tempban": (("Участник", "@Имя", True, 40), ("Длительность", "10s / 5m / 2h / 1d", True, 15), ("Причина", "Не указана", False, 1024)),
         "unban": (("ID пользователя", "123456789", True, 40),),
         "blacklist": (("Участник или ID", "@Имя или ID", True, 40), ("Причина", "Нарушение правил", False, 1024)),
         "unblacklist": (("Участник или ID", "@Имя или ID", True, 40),),
@@ -195,6 +197,7 @@ class ModMenu(commands.Cog):
         "warn": ("moderate_members",), "unwarn": ("moderate_members",),
         "mute": ("moderate_members",), "unmute": ("moderate_members",),
         "kick": ("kick_members",), "ban": ("ban_members",), "unban": ("ban_members",),
+        "tempban": ("ban_members",),
         "blacklist": ("manage_roles",), "unblacklist": ("manage_roles",),
         "modnote": ("moderate_members",), "history": ("moderate_members",),
         "clear": ("manage_messages",), "clearuser": ("manage_messages",),
@@ -208,7 +211,7 @@ class ModMenu(commands.Cog):
 
     TITLES = {
         "warn": "Варн", "unwarn": "Снять варн", "mute": "Мут", "unmute": "Анмут",
-        "kick": "Кик", "ban": "Бан", "unban": "Разбан", "blacklist": "Внести в ЧС",
+        "kick": "Кик", "ban": "Бан", "tempban": "Временный бан", "unban": "Разбан", "blacklist": "Внести в ЧС",
         "unblacklist": "Снять с ЧС", "modnote": "Заметка модератора",
         "history": "История участника", "clear": "Очистить канал",
         "clearuser": "Очистить у участника",
@@ -363,6 +366,11 @@ class ModMenu(commands.Cog):
             return await cog.unmute.callback(cog, interaction, member)
         if action == "kick":
             return await cog.kick.callback(cog, interaction, member, values[1] or "Не указана")
+        if action == "tempban":
+            duration_val = values[1].strip()
+            if not duration_val:
+                return await interaction.response.send_message("❌ Укажите длительность (10s / 5m / 2h / 1d).", ephemeral=True)
+            return await cog.tempban.callback(cog, interaction, member, duration_val, values[2] or "Не указана", 0)
         if action == "modnote":
             return await cog.modnote.callback(cog, interaction, member, values[1])
         if action == "history":
