@@ -350,6 +350,27 @@ class Database:
                 item_type TEXT,
                 item_value TEXT,
                 drop_rate REAL DEFAULT 0.1
+            )''',
+            '''CREATE TABLE IF NOT EXISTS afk_status (
+                guild_id TEXT, user_id TEXT, reason TEXT, since TEXT,
+                PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS birthdays (
+                guild_id TEXT, user_id TEXT, day INTEGER, month INTEGER,
+                last_announced TEXT,
+                PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS lottery_state (
+                guild_id TEXT PRIMARY KEY,
+                ticket_price INTEGER DEFAULT 0,
+                prize_pool INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'inactive',
+                ends_at TEXT,
+                channel_id TEXT
+            )''',
+            '''CREATE TABLE IF NOT EXISTS lottery_tickets (
+                guild_id TEXT, user_id TEXT, tickets INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
             )'''
         ]
         
@@ -1424,6 +1445,124 @@ class Database:
             (price * amount, guild_id, user_id))
         await self.conn.commit()
         return price * amount
+
+    # ==========================================
+    #     AFK-СТАТУС
+    # ==========================================
+
+    async def set_afk(self, guild_id: str, user_id: str, reason: str):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO afk_status (guild_id, user_id, reason, since) VALUES (?, ?, ?, ?)',
+            (guild_id, user_id, reason, datetime.now(timezone.utc).isoformat())
+        )
+        await self.conn.commit()
+
+    async def clear_afk(self, guild_id: str, user_id: str):
+        await self.conn.execute('DELETE FROM afk_status WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.commit()
+
+    async def get_afk(self, guild_id: str, user_id: str) -> dict | None:
+        cursor = await self.conn.execute(
+            'SELECT reason, since FROM afk_status WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    # ==========================================
+    #     ДНИ РОЖДЕНИЯ
+    # ==========================================
+
+    async def set_birthday(self, guild_id: str, user_id: str, day: int, month: int):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO birthdays (guild_id, user_id, day, month, last_announced) '
+            'VALUES (?, ?, ?, ?, NULL)',
+            (guild_id, user_id, day, month)
+        )
+        await self.conn.commit()
+
+    async def remove_birthday(self, guild_id: str, user_id: str):
+        await self.conn.execute('DELETE FROM birthdays WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.commit()
+
+    async def get_birthday(self, guild_id: str, user_id: str) -> dict | None:
+        cursor = await self.conn.execute(
+            'SELECT day, month FROM birthdays WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def get_birthdays_for(self, guild_id: str, month: int, day: int) -> list:
+        cursor = await self.conn.execute(
+            'SELECT user_id, last_announced FROM birthdays WHERE guild_id = ? AND month = ? AND day = ?',
+            (guild_id, month, day)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def mark_birthday_announced(self, guild_id: str, user_id: str, date_key: str):
+        await self.conn.execute(
+            'UPDATE birthdays SET last_announced = ? WHERE guild_id = ? AND user_id = ?',
+            (date_key, guild_id, user_id)
+        )
+        await self.conn.commit()
+
+    # ==========================================
+    #     ЛОТЕРЕЯ
+    # ==========================================
+
+    async def set_lottery(self, guild_id: str, ticket_price: int, ends_at: str, channel_id: str):
+        await self.conn.execute(
+            'INSERT OR REPLACE INTO lottery_state (guild_id, ticket_price, prize_pool, status, ends_at, channel_id) '
+            'VALUES (?, ?, 0, ?, ?, ?)',
+            (guild_id, ticket_price, 'active', ends_at, channel_id)
+        )
+        await self.conn.execute('DELETE FROM lottery_tickets WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def get_lottery(self, guild_id: str) -> dict | None:
+        cursor = await self.conn.execute(
+            'SELECT ticket_price, prize_pool, status, ends_at, channel_id FROM lottery_state WHERE guild_id = ?',
+            (guild_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def end_lottery(self, guild_id: str):
+        await self.conn.execute(
+            "UPDATE lottery_state SET status = 'inactive' WHERE guild_id = ?",
+            (guild_id,)
+        )
+        await self.conn.execute('DELETE FROM lottery_tickets WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def buy_lottery_tickets(self, guild_id: str, user_id: str, count: int, price: int) -> bool:
+        user = await self.get_or_create_user(guild_id, user_id)
+        cost = count * price
+        if user.get('balance', 0) < cost:
+            return False
+        await self.conn.execute(
+            'UPDATE users SET balance = balance - ? WHERE guild_id = ? AND user_id = ?',
+            (cost, guild_id, user_id)
+        )
+        await self.conn.execute(
+            'INSERT INTO lottery_tickets (guild_id, user_id, tickets) VALUES (?, ?, ?) '
+            'ON CONFLICT(guild_id, user_id) DO UPDATE SET tickets = tickets + ?',
+            (guild_id, user_id, count, count)
+        )
+        await self.conn.execute(
+            'UPDATE lottery_state SET prize_pool = prize_pool + ? WHERE guild_id = ?',
+            (cost, guild_id)
+        )
+        await self.conn.commit()
+        return True
+
+    async def get_lottery_tickets(self, guild_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT user_id, tickets FROM lottery_tickets WHERE guild_id = ?',
+            (guild_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
 
 
 def _backup_sqlite(src_path: str, dst_path: str):
