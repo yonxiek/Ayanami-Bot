@@ -55,6 +55,38 @@ class UnwarnModal(discord.ui.Modal, title="Снятие предупрежден
         self.cog.bot.dispatch("moderation_log", "unwarn", interaction.guild, self.target_member, interaction.user, reason=f"Снят варн #{self.warn_id.value}")
         await self.cog.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unwarn", 1)
 
+class UnstrikeModal(discord.ui.Modal, title="Снятие страйка"):
+    strike_id = discord.ui.TextInput(label="ID страйка", placeholder="Введите числовой ID", required=True)
+
+    def __init__(self, cog, target_member):
+        super().__init__()
+        self.cog = cog
+        self.target_member = target_member
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.HTTPException as e:
+            if e.code == 40060: pass
+            else: raise
+
+        embed = discord.Embed(color=discord.Color(0x2ecc71))
+        embed.set_author(name="Снятие страйка")
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        if interaction.guild.banner:
+            embed.set_image(url=interaction.guild.banner.url)
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{self.target_member.mention} {self.target_member.name} {self.target_member.id}"
+        embed.add_field(name="Модератор", value=mod_line, inline=False)
+        embed.add_field(name="Сотрудник", value=user_line, inline=False)
+        embed.add_field(name="Причина", value=f"Страйк #{self.strike_id.value} снят", inline=False)
+        embed.set_footer(text="Ayanami System", icon_url=self.cog.bot.user.display_avatar.url)
+
+        await interaction.followup.send(embed=embed)
+        self.cog.bot.dispatch("moderation_log", "unstrike", interaction.guild, self.target_member, interaction.user, reason=f"Снят страйк #{self.strike_id.value}")
+        await self.cog.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unstrike", 1)
+
 class Moderation(commands.Cog):
 
     def __init__(self, bot):
@@ -65,13 +97,20 @@ class Moderation(commands.Cog):
         config = await self.db.get_guild_config(str(guild_id))
         return config.get(key, default)
 
-    @app_commands.command(name="clear", description="Очистить сообщения")
-    @app_commands.describe(amount="Количество сообщений")
+    @app_commands.command(name="clear", description="Очистить сообщения в канале")
+    @app_commands.describe(
+        amount="Количество сообщений",
+        member="Очистить только сообщения этого участника (необязательно)",
+    )
     @app_commands.default_permissions(manage_messages=True)
-    async def clear(self, interaction: discord.Interaction, amount: int):
+    async def clear(self, interaction: discord.Interaction, amount: int, member: discord.Member | None = None):
         await interaction.response.defer(ephemeral=True)
-        deleted = await interaction.channel.purge(limit=amount)
-        
+        if member:
+            def _check(m): return m.author.id == member.id
+            deleted = await interaction.channel.purge(limit=amount, check=_check, bulk=False)
+        else:
+            deleted = await interaction.channel.purge(limit=amount)
+
         embed = discord.Embed(color=discord.Color(0x2b2d31))
         embed.set_author(name="Очистка")
         if interaction.guild.icon:
@@ -79,13 +118,28 @@ class Moderation(commands.Cog):
         if interaction.guild.banner:
             embed.set_image(url=interaction.guild.banner.url)
         mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
-        user_line = f"{interaction.channel.name} {len(deleted)}"
+        user_line = (
+            f"{member.mention} {member.name} {member.id}"
+            if member
+            else f"{interaction.channel.name} {len(deleted)}"
+        )
         embed.add_field(name="Модератор", value=mod_line, inline=False)
         embed.add_field(name="Участник", value=user_line, inline=False)
-        embed.add_field(name="Причина", value=f"Удалено {len(deleted)} сообщений в {interaction.channel.mention}", inline=False)
+        reason_text = (
+            f"Удалено {len(deleted)} сообщений {member.mention} в {interaction.channel.mention}"
+            if member
+            else f"Удалено {len(deleted)} сообщений в {interaction.channel.mention}"
+        )
+        embed.add_field(name="Причина", value=reason_text, inline=False)
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
-        
+
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="clearmember", description="Очистить сообщения отдельного участника в этом канале")
+    @app_commands.describe(member="Участник", amount="Сколько сообщений проверить")
+    @app_commands.default_permissions(manage_messages=True)
+    async def clearmember(self, interaction: discord.Interaction, member: discord.Member, amount: int = 100):
+        await self.clear.callback(self, interaction, amount, member)
 
     @app_commands.command(name="modstats", description="Статистика модератора")
     @app_commands.describe(moderator="Модератор, чью статистику показать")
@@ -98,6 +152,7 @@ class Moderation(commands.Cog):
             "warn": "Варны", "unwarn": "Снятие варнов",
             "kick": "Кики", "ban": "Баны", "unban": "Разбаны",
             "blacklist": "ЧС", "unblacklist": "Снятие ЧС",
+            "strike": "Страйки", "unstrike": "Снятие страйков",
             "report_resolved": "Закрытые жалобы"
         }
 
@@ -409,6 +464,153 @@ class Moderation(commands.Cog):
         embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
         await interaction.response.send_message(embed=embed)
 
+    async def _is_staff(self, guild: discord.Guild, member: discord.Member) -> bool:
+        if member.guild_permissions.administrator:
+            return True
+        config = await self.db.get_guild_config(str(guild.id))
+        staff_roles = [str(r) for r in (config.get("staff_roles", []) or [])]
+        admin_roles = [str(r) for r in (config.get("admin_roles", []) or [])]
+        mod_roles = set(staff_roles) | set(admin_roles)
+        return bool(mod_roles & {str(r.id) for r in member.roles})
+
+    async def _strike_punish(self, interaction: discord.Interaction, member: discord.Member, strike_count: int, strike_limit: int):
+        config = await self.db.get_guild_config(str(interaction.guild.id))
+        strike_action = config.get("strike_action", "demote")
+        staff_roles = [str(r) for r in (config.get("staff_roles", []) or [])]
+        admin_roles = [str(r) for r in (config.get("admin_roles", []) or [])]
+
+        try:
+            if strike_action == "kick" and member.id != interaction.guild.owner_id:
+                await member.kick(reason=f"Достигнут лимит страйков ({strike_count}/{strike_limit})")
+                self.bot.dispatch("moderation_log", "kick", interaction.guild, member, interaction.user,
+                                  reason=f"Автокик: {strike_count} страйков")
+                return "кикнут"
+            remove_ids = set(staff_roles) | set(admin_roles)
+            roles_to_remove = [
+                r for r in member.roles
+                if str(r.id) in remove_ids
+                   and r != interaction.guild.default_role
+                   and not r.managed
+                   and r < interaction.guild.me.top_role
+            ]
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove, reason=f"Лимит страйков ({strike_count}/{strike_limit})")
+                self.bot.dispatch("moderation_log", "demote", interaction.guild, member, interaction.user,
+                                  reason=f"Авто-снятие ролей: {strike_count} страйков")
+                return "снят с ролей модерации"
+            return "наказание не применимо (нет ролей ниже моих)"
+        except discord.Forbidden:
+            return None
+        except Exception:
+            return None
+
+    @app_commands.command(name="strike", description="Выдать страйк модератору (лимит — до 3)")
+    @app_commands.describe(member="Модератор, которому выдаётся страйк", reason="Причина")
+    @app_commands.default_permissions(administrator=True)
+    async def strike(self, interaction: discord.Interaction, member: discord.Member, reason: str = "Нарушение правил модерации"):
+        if member.id == interaction.user.id:
+            return await interaction.response.send_message("❌ Нельзя выдать страйк самому себе.", ephemeral=True)
+
+        if not await self._is_staff(interaction.guild, member):
+            return await interaction.response.send_message(
+                "❌ Страйк выдаётся только модераторам (участникам со стафф-ролью).",
+                ephemeral=True)
+
+        await self.db.add_strike(str(interaction.guild.id), str(member.id), str(interaction.user.id), reason)
+        await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "strike", 1)
+        self.bot.dispatch("moderation_log", "strike", interaction.guild, member, interaction.user, reason=reason)
+
+        config = await self.db.get_guild_config(str(interaction.guild.id))
+        strike_count = await self.db.count_strikes(str(interaction.guild.id), str(member.id))
+        strike_limit = config.get("strike_limit", 3)
+        action_text = None
+        if strike_count >= strike_limit and strike_limit > 0:
+            action_text = await self._strike_punish(interaction, member, strike_count, strike_limit)
+            if action_text:
+                await self.db.clear_strikes(str(interaction.guild.id), str(member.id))
+
+        embed = discord.Embed(color=discord.Color(0x2b2d31))
+        embed.set_author(name="Страйк", icon_url=Icons.WARN)
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        if interaction.guild.banner:
+            embed.set_image(url=interaction.guild.banner.url)
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
+        embed.add_field(name="Выдал", value=mod_line, inline=False)
+        embed.add_field(name="Модератор", value=user_line, inline=False)
+        value_text = str(strike_count)
+        if strike_limit > 0:
+            value_text += f" / {strike_limit}"
+            if action_text:
+                value_text += f" → {action_text}"
+        embed.add_field(name="Страйков", value=value_text, inline=False)
+        embed.add_field(name="Причина", value=reason, inline=False)
+        embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await self.send_punishment_notice(member, "получили страйк", reason, interaction.guild)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="strikes", description="Посмотреть страйки модератора")
+    @app_commands.describe(member="Модератор (оставьте пустым для себя)")
+    async def strikes(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        target = member or interaction.user
+        rows = await self.db.get_strikes(str(interaction.guild.id), str(target.id))
+
+        description = ""
+        if not rows:
+            description = "Чисто! У модератора нет активных страйков."
+        else:
+            strike_text = ""
+            for r in rows:
+                strike_text += f"**ID: `{r['id']}`** | Выдал: <@{r['moderator_id']}>\n> {r['reason']}\n\n"
+            description = strike_text
+
+        embed = discord.Embed(title=f"### Страйки: {target.name}", description=description, color=discord.Color(0x2b2d31))
+        embed.set_footer(text="Ayanami System")
+
+        view = discord.ui.View()
+        if interaction.user.guild_permissions.administrator:
+            unstrike_button = discord.ui.Button(label="Снять страйк", style=discord.ButtonStyle.danger, emoji="🗑️")
+
+            async def unstrike_callback(interaction: discord.Interaction):
+                await interaction.response.send_modal(UnstrikeModal(self, target))
+
+            unstrike_button.callback = unstrike_callback
+            view.add_item(unstrike_button)
+
+        await interaction.response.send_message(embed=embed, view=view)
+
+    async def remove_strike(self, interaction: discord.Interaction, strike_id: int):
+        """Снять страйк по ID."""
+        cursor = await self.db.conn.execute(
+            'SELECT id, user_id FROM strikes WHERE id = ? AND guild_id = ?',
+            (strike_id, str(interaction.guild.id)))
+        row = await cursor.fetchone()
+        if not row:
+            return await interaction.response.send_message(
+                f"❌ Страйк **#{strike_id}** не найден.", ephemeral=True)
+
+        target = interaction.guild.get_member(int(row['user_id']))
+        ok = await self.db.remove_strike_by_id(strike_id)
+        if not ok:
+            return await interaction.response.send_message(
+                f"❌ Страйк **#{strike_id}** не найден.", ephemeral=True)
+        await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "unstrike", 1)
+        self.bot.dispatch("moderation_log", "unstrike", interaction.guild,
+                          target or interaction.user, interaction.user,
+                          reason=f"Снят страйк #{strike_id}")
+
+        embed = discord.Embed(color=discord.Color(0x2ecc71))
+        embed.set_author(name="Снятие страйка")
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        if target:
+            embed.add_field(name="Модератор", value=f"{target.mention} {target.name} {target.id}", inline=False)
+        embed.add_field(name="Выдавший", value=f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}", inline=False)
+        embed.add_field(name="Причина", value=f"Страйк #{strike_id} снят", inline=False)
+        embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="kick", description="Исключить участника с сервера")
     @app_commands.describe(member="Участник", reason="Причина исключения")
     @app_commands.default_permissions(kick_members=True)
@@ -434,12 +636,29 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="ban", description="Забанить участника (или ID, если его нет на сервере)")
-    @app_commands.describe(member="Участник или его ID, которого нужно забанить",reason="Причина бана (необязательно)")
+    @app_commands.describe(
+        member="Участник или его ID, которого нужно забанить",
+        reason="Причина бана (необязательно)",
+        clear_days="Очистить сообщения участника за последние N дней (0-7)",
+    )
+    @app_commands.choices(clear_days=[
+        app_commands.Choice(name="Не очищать сообщения", value=0),
+        app_commands.Choice(name="За посл. 1 день", value=1),
+        app_commands.Choice(name="За посл. 2 дня", value=2),
+        app_commands.Choice(name="За посл. 3 дня", value=3),
+        app_commands.Choice(name="За посл. 4 дня", value=4),
+        app_commands.Choice(name="За посл. 5 дней", value=5),
+        app_commands.Choice(name="За посл. 6 дней", value=6),
+        app_commands.Choice(name="За посл. 7 дней", value=7),
+    ])
     @app_commands.default_permissions(ban_members=True)
-    async def ban(self, interaction: discord.Interaction, member: discord.User, reason: str = "Не указана"):
-            await interaction.guild.ban(member, reason=reason)
-            self.bot.dispatch("moderation_log", "ban", interaction.guild, member, interaction.user, reason=reason)
-        
+    async def ban(self, interaction: discord.Interaction, member: discord.User, reason: str = "Не указана",
+                  clear_days: int = 0):
+            clear_days = max(0, min(7, clear_days))
+            await interaction.guild.ban(member, reason=reason, delete_message_days=clear_days)
+            self.bot.dispatch("moderation_log", "ban", interaction.guild, member, interaction.user,
+                              reason=f"{reason} | Очистка сообщений за {clear_days} дн." if clear_days else reason)
+
             embed = discord.Embed(color=discord.Color(0x2b2d31))
             embed.set_author(name="Бан", icon_url=Icons.BAN)
             if interaction.guild.icon:
@@ -450,6 +669,8 @@ class Moderation(commands.Cog):
             user_line = f"{member.mention if hasattr(member, 'mention') else str(member.id)} {member.name} {member.id!s}"
             embed.add_field(name="Модератор", value=mod_line, inline=False)
             embed.add_field(name="Участник", value=user_line, inline=False)
+            if clear_days:
+                embed.add_field(name="Очищено сообщений", value=f"за {clear_days} дн.", inline=False)
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
             await self.send_punishment_notice(member, "забанены", reason, interaction.guild)
@@ -822,9 +1043,15 @@ class Moderation(commands.Cog):
 
     @commands.command(name="clear")
     @commands.has_permissions(manage_messages=True)
-    async def clear_prefix(self, ctx, amount: int):
+    async def clear_prefix(self, ctx, amount: int, member: MemberSearch = None):
         from prefix_adapter import InteractionAdapter
-        await self.clear.callback(self, InteractionAdapter(ctx), amount)
+        await self.clear.callback(self, InteractionAdapter(ctx), amount, member)
+
+    @commands.command(name="clearmember")
+    @commands.has_permissions(manage_messages=True)
+    async def clearmember_prefix(self, ctx, member: MemberSearch, amount: int = 100):
+        from prefix_adapter import InteractionAdapter
+        await self.clear.callback(self, InteractionAdapter(ctx), amount, member)
 
     @commands.command(name="modstats")
     async def modstats_prefix(self, ctx, moderator: discord.Member = None):
@@ -872,6 +1099,23 @@ class Moderation(commands.Cog):
         from prefix_adapter import InteractionAdapter
         await self.warns.callback(self, InteractionAdapter(ctx), member)
 
+    @commands.command(name="strike")
+    @commands.has_permissions(administrator=True)
+    async def strike_prefix(self, ctx, member: MemberSearch, *, reason: str = "Нарушение правил модерации"):
+        from prefix_adapter import InteractionAdapter
+        await self.strike.callback(self, InteractionAdapter(ctx), member, reason)
+
+    @commands.command(name="strikes")
+    async def strikes_prefix(self, ctx, member: MemberSearch = None):
+        from prefix_adapter import InteractionAdapter
+        await self.strikes.callback(self, InteractionAdapter(ctx), member)
+
+    @commands.command(name="unstrike")
+    @commands.has_permissions(administrator=True)
+    async def unstrike_prefix(self, ctx, strike_id: int):
+        from prefix_adapter import InteractionAdapter
+        await self.remove_strike(InteractionAdapter(ctx), strike_id)
+
     @commands.command(name="kick")
     @commands.has_permissions(kick_members=True)
     async def kick_prefix(self, ctx, member: MemberSearch, *, reason: str = "Не указана"):
@@ -880,9 +1124,9 @@ class Moderation(commands.Cog):
 
     @commands.command(name="ban")
     @commands.has_permissions(ban_members=True)
-    async def ban_prefix(self, ctx, member: UserSearch, *, reason: str = "Не указана"):
+    async def ban_prefix(self, ctx, member: UserSearch, days: int = 0, *, reason: str = "Не указана"):
         from prefix_adapter import InteractionAdapter
-        await self.ban.callback(self, InteractionAdapter(ctx), member, reason)
+        await self.ban.callback(self, InteractionAdapter(ctx), member, reason, days)
 
     @commands.command(name="unban")
     @commands.has_permissions(ban_members=True)

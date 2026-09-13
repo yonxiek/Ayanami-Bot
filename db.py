@@ -37,6 +37,7 @@ class Database:
             '''CREATE TABLE IF NOT EXISTS warns (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, reason TEXT, timestamp TEXT)''',
             '''CREATE TABLE IF NOT EXISTS temporary_bans (guild_id TEXT, user_id TEXT, moderator_id TEXT, reason TEXT, until TEXT, timestamp TEXT)''',
             '''CREATE TABLE IF NOT EXISTS mod_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, note TEXT, timestamp TEXT)''',
+            '''CREATE TABLE IF NOT EXISTS strikes (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, moderator_id TEXT, reason TEXT, timestamp TEXT)''',
             '''CREATE TABLE IF NOT EXISTS level_roles (guild_id TEXT, level INTEGER, role_id TEXT, PRIMARY KEY (guild_id, level))''',
             '''CREATE TABLE IF NOT EXISTS bounties (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, creator_id TEXT, 
@@ -440,6 +441,40 @@ class Database:
             return {row['action_type']: row['count'] for row in rows}
         except: return {}
 
+    # ==========================================
+    #     STRIKES (для модераторов)
+    # ==========================================
+
+    async def add_strike(self, guild_id: str, user_id: str, moderator_id: str, reason: str):
+        await self.conn.execute(
+            'INSERT INTO strikes (guild_id, user_id, moderator_id, reason, timestamp) VALUES (?, ?, ?, ?, ?)',
+            (guild_id, user_id, moderator_id, reason, datetime.now(timezone.utc).isoformat()))
+        await self.conn.commit()
+
+    async def count_strikes(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) FROM strikes WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id))
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+    async def get_strikes(self, guild_id: str, user_id: str) -> list[dict]:
+        cursor = await self.conn.execute(
+            'SELECT id, moderator_id, reason, timestamp FROM strikes WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id))
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def remove_strike_by_id(self, strike_id: int) -> bool:
+        cursor = await self.conn.execute('DELETE FROM strikes WHERE id = ?', (strike_id,))
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def clear_strikes(self, guild_id: str, user_id: str):
+        await self.conn.execute('DELETE FROM strikes WHERE guild_id = ? AND user_id = ?',
+                                (guild_id, user_id))
+        await self.conn.commit()
+
     async def get_guild_config(self, guild_id: str) -> dict:
         try:
             cursor = await self.conn.execute('SELECT config FROM guild_config WHERE guild_id = ?', (guild_id,))
@@ -677,7 +712,7 @@ class Database:
 
     async def clear_all_data(self, guild_id: str):
         guild_tables = [
-            'users', 'mod_stats', 'warns', 'temporary_bans', 'mod_notes', 'level_roles',
+            'users', 'mod_stats', 'warns', 'temporary_bans', 'mod_notes', 'strikes', 'level_roles',
             'bounties', 'events', 'scheduled_tasks', 'security_warnings', 'game_scores',
             'daily_quests', 'user_quests', 'shop_items', 'user_inventory', 'user_titles',
             'user_activities', 'daily_rewards', 'random_quest_pool', 'random_quest_config',

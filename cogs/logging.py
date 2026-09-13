@@ -792,6 +792,7 @@ class Logging(VoiceTrackerMixin, commands.Cog):
             "kick": "pun_kick",
             "mute": "pun_mute", "unmute": "pun_unmute",
             "warn": "pun_warn", "unwarn": "pun_unwarn",
+            "strike": "pun_strike", "unstrike": "pun_unstrike",
             "blacklist": "pun_blacklist", "unblacklist": "pun_unblacklist",
         }
         event_key = event_map.get(action)
@@ -806,6 +807,8 @@ class Logging(VoiceTrackerMixin, commands.Cog):
             "unmute": discord.Color.dark_teal(),
             "warn": discord.Color.gold(),
             "unwarn": discord.Color.dark_gold(),
+            "strike": discord.Color.red(),
+            "unstrike": discord.Color.green(),
             "blacklist": discord.Color.dark_red(),
             "unblacklist": discord.Color.green(),
         }
@@ -817,6 +820,8 @@ class Logging(VoiceTrackerMixin, commands.Cog):
             "unmute": "User Unmuted",
             "warn": "User Warned",
             "unwarn": "User Unwarned",
+            "strike": "Moderator Struck",
+            "unstrike": "Strike Removed",
             "blacklist": "User Blacklisted",
             "unblacklist": "User Unblacklisted",
         }

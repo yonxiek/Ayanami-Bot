@@ -15,6 +15,7 @@ COLORS = {
     "Ники": 0x1abc9c,
     "Голос": 0x9b59b6,
     "Роли": 0xe67e22,
+    "Страйки": 0xc0392b,
 }
 
 
@@ -63,6 +64,7 @@ class ModMenuView(discord.ui.View):
             discord.SelectOption(label="Голос", description="Войс-кик, заглушение", emoji="🎙️"),
             discord.SelectOption(label="Роли", description="Выдача и снятие ролей", emoji="🎭"),
             discord.SelectOption(label="Чёрный список", description="В ЧС и снятие ЧС", emoji="🚫"),
+            discord.SelectOption(label="Страйки", description="Страйки для модераторов", emoji="🔨"),
             discord.SelectOption(label="Журнал", description="Заметки и история", emoji="📝"),
         ],
     )
@@ -94,6 +96,7 @@ class ModCategoryView(discord.ui.View):
             ],
             "Каналы": [
                 ("clear", "Очистить", "🧹"),
+                ("clearuser", "Очистить у участника", "🧽"),
                 ("slowmode", "Слоумод", "🐢"),
                 ("lock", "Лок", "🔒"),
                 ("unlock", "Анлок", "🔓"),
@@ -114,6 +117,11 @@ class ModCategoryView(discord.ui.View):
             "Чёрный список": [
                 ("blacklist", "В ЧС", "🚫"),
                 ("unblacklist", "Из ЧС", "✅"),
+            ],
+            "Страйки": [
+                ("strike", "Выдать страйк", "🔨"),
+                ("unstrike", "Снять страйк", "🗑️"),
+                ("strikes", "Список страйков", "📋"),
             ],
             "Журнал": [
                 ("modnote", "Заметка", "📝"),
@@ -162,13 +170,14 @@ class ModMenu(commands.Cog):
         "mute": (("Участник", "@Имя", True, 40), ("Время", "10s / 5m / 2h / 1d", True, 15), ("Причина", "Не указана", False, 1024)),
         "unmute": (("Участник", "@Имя", True, 40),),
         "kick": (("Участник", "@Имя", True, 40), ("Причина", "Не указана", False, 1024)),
-        "ban": (("Участник или ID", "@Имя или ID", True, 40), ("Причина", "Не указана", False, 1024)),
+        "ban": (("Участник или ID", "@Имя или ID", True, 40), ("Причина", "Не указана", False, 1024), ("Очистка сообщений", "Дней (0-7), по умолч. 0", False, 2)),
         "unban": (("ID пользователя", "123456789", True, 40),),
         "blacklist": (("Участник или ID", "@Имя или ID", True, 40), ("Причина", "Нарушение правил", False, 1024)),
         "unblacklist": (("Участник или ID", "@Имя или ID", True, 40),),
         "modnote": (("Участник", "@Имя", True, 40), ("Текст заметки", "Что было замечено", True, 1024)),
         "history": (("Участник", "@Имя", True, 40),),
         "clear": (("Количество сообщений", "50", True, 5),),
+        "clearuser": (("Количество сообщений", "50", True, 5), ("Участник", "@Имя", True, 40)),
         "slowmode": (("Секунды", "0 = выключить (макс. 21600)", True, 6),),
         "nick": (("Участник", "@Имя", True, 40), ("Новый ник", "пусто = сбросить", False, 40)),
         "reset_nick": (("Участник", "@Имя", True, 40),),
@@ -177,6 +186,9 @@ class ModMenu(commands.Cog):
         "undeafen": (("Участник", "@Имя", True, 40),),
         "giverole": (("Участник", "@Имя", True, 40), ("Роль", "ID или название", True, 40)),
         "removerole": (("Участник", "@Имя", True, 40), ("Роль", "ID или название", True, 40)),
+        "strike": (("Модератор", "@Имя", True, 40), ("Причина", "Нарушение правил модерации", False, 1024)),
+        "unstrike": (("ID страйка", "1", True, 10),),
+        "strikes": (("Модератор", "@Имя", True, 40),),
     }
 
     PERMS = {
@@ -185,11 +197,13 @@ class ModMenu(commands.Cog):
         "kick": ("kick_members",), "ban": ("ban_members",), "unban": ("ban_members",),
         "blacklist": ("manage_roles",), "unblacklist": ("manage_roles",),
         "modnote": ("moderate_members",), "history": ("moderate_members",),
-        "clear": ("manage_messages",), "lock": ("manage_channels",), "unlock": ("manage_channels",),
+        "clear": ("manage_messages",), "clearuser": ("manage_messages",),
+        "lock": ("manage_channels",), "unlock": ("manage_channels",),
         "slowmode": ("manage_channels",),
         "nick": ("manage_nicknames",), "reset_nick": ("manage_nicknames",),
         "disconnect": ("move_members",), "deafen": ("deafen_members",), "undeafen": ("deafen_members",),
         "giverole": ("manage_roles",), "removerole": ("manage_roles",),
+        "strike": ("administrator",), "unstrike": ("administrator",), "strikes": ("moderate_members",),
     }
 
     TITLES = {
@@ -197,10 +211,12 @@ class ModMenu(commands.Cog):
         "kick": "Кик", "ban": "Бан", "unban": "Разбан", "blacklist": "Внести в ЧС",
         "unblacklist": "Снять с ЧС", "modnote": "Заметка модератора",
         "history": "История участника", "clear": "Очистить канал",
+        "clearuser": "Очистить у участника",
         "lock": "Закрыть канал", "unlock": "Открыть канал",
         "slowmode": "Слоумод", "nick": "Сменить ник", "reset_nick": "Сбросить ник",
         "disconnect": "Войс-кик", "deafen": "Заглушить (deafen)", "undeafen": "Разглушить",
         "giverole": "Выдать роль", "removerole": "Снять роль",
+        "strike": "Выдать страйк", "unstrike": "Снять страйк", "strikes": "Страйки модератора",
     }
 
     def __init__(self, bot):
@@ -293,6 +309,23 @@ class ModMenu(commands.Cog):
                 return await interaction.response.send_message("❌ Укажите число.", ephemeral=True)
             return await cog.clear.callback(cog, interaction, amount)
 
+        if action == "clearuser":
+            try:
+                amount = int(values[0])
+            except ValueError:
+                return await interaction.response.send_message("❌ Укажите число.", ephemeral=True)
+            member = self._resolve_member(interaction.guild, values[1])
+            if not member:
+                return await interaction.response.send_message("❌ Участник не найден на сервере.", ephemeral=True)
+            return await cog.clear.callback(cog, interaction, amount, member)
+
+        if action == "unstrike":
+            try:
+                strike_id = int(values[0])
+            except ValueError:
+                return await interaction.response.send_message("❌ Укажите ID страйка числом.", ephemeral=True)
+            return await cog.remove_strike(interaction, strike_id)
+
         if action in ("blacklist", "unblacklist", "ban", "unban"):
             user = self._resolve_member(interaction.guild, values[0])
             cid = _extract_id(values[0])
@@ -305,7 +338,11 @@ class ModMenu(commands.Cog):
             if action == "unblacklist":
                 return await cog.unblacklist.callback(cog, interaction, user)
             if action == "ban":
-                return await cog.ban.callback(cog, interaction, user, values[1] or "Не указана")
+                try:
+                    clear_days = max(0, min(7, int(values[2] or 0)))
+                except (ValueError, IndexError):
+                    clear_days = 0
+                return await cog.ban.callback(cog, interaction, user, values[1] or "Не указана", clear_days)
             return await cog.unban.callback(cog, interaction, user)
 
         member = self._resolve_member(interaction.guild, values[0])
@@ -330,6 +367,10 @@ class ModMenu(commands.Cog):
             return await cog.modnote.callback(cog, interaction, member, values[1])
         if action == "history":
             return await cog.history.callback(cog, interaction, member)
+        if action == "strike":
+            return await cog.strike.callback(cog, interaction, member, values[1] or "Нарушение правил модерации")
+        if action == "strikes":
+            return await cog.strikes.callback(cog, interaction, member)
         if action == "nick":
             return await cog.change_nickname(interaction, member, values[1].strip() if len(values) > 1 else "")
         if action == "reset_nick":

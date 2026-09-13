@@ -220,6 +220,41 @@ async def test_deactivate_expired_warnings(db):
     assert await db.get_active_warnings("111", "222") == 1
 
 
+async def test_add_count_strikes(db):
+    assert await db.count_strikes("111", "222") == 0
+    await db.add_strike("111", "222", "333", "флуд выдача ролей")
+    await db.add_strike("111", "222", "333", "абуз мута")
+    await db.add_strike("999", "222", "333", "в другом сервере")
+    assert await db.count_strikes("111", "222") == 2
+    assert await db.count_strikes("999", "222") == 1
+
+
+async def test_get_strikes_ordered(db):
+    await db.add_strike("111", "222", "333", "причина №1")
+    await db.add_strike("111", "222", "444", "причина №2")
+    strikes = await db.get_strikes("111", "222")
+    assert len(strikes) == 2
+    assert strikes[0]["moderator_id"] == "333"
+    assert strikes[1]["moderator_id"] == "444"
+
+
+async def test_remove_strike_by_id(db):
+    await db.add_strike("111", "222", "333", "тест")
+    strikes = await db.get_strikes("111", "222")
+    strike_id = strikes[0]["id"]
+    assert await db.remove_strike_by_id(strike_id) is True
+    assert await db.count_strikes("111", "222") == 0
+    assert await db.remove_strike_by_id(strike_id) is False
+
+
+async def test_clear_strikes(db):
+    await db.add_strike("111", "222", "333", "тест")
+    await db.add_strike("111", "222", "333", "тест 2")
+    await db.clear_strikes("111", "222")
+    assert await db.count_strikes("111", "222") == 0
+    assert await db.get_strikes("111", "222") == []
+
+
 async def _seed_user_stats(db, guild_id="111", user_id="222"):
     await db.create_user(guild_id, user_id)
     await db.conn.execute(

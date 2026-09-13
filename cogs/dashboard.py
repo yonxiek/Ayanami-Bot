@@ -777,6 +777,7 @@ class SetupLoggingView(discord.ui.View):
             "pun_ban": "Бан", "pun_unban": "Разбан", "pun_kick": "Кик",
             "pun_mute": "Мут", "pun_unmute": "Снятие мута",
             "pun_warn": "Варн", "pun_unwarn": "Снятие варна",
+            "pun_strike": "Страйк", "pun_unstrike": "Снятие страйка",
             "pun_blacklist": "Чёрный список", "pun_unblacklist": "Снятие с ЧС",
             "emoji_sticker": "Эмодзи/стикеры", "soundboard": "Саундборд",
             "commands": "Команды", "avatar": "Аватар/баннер", "pins": "Закрепление",
@@ -866,7 +867,7 @@ class SetupLoggingView(discord.ui.View):
     @discord.ui.select(
         cls=discord.ui.Select,
         placeholder="⚖️ Наказания и настройки",
-        min_values=0, max_values=10,
+        min_values=0, max_values=12,
         options=[
             discord.SelectOption(label="Бан", value="pun_ban", emoji="🔨", description="Участник забанен"),
             discord.SelectOption(label="Разбан", value="pun_unban", emoji="✅", description="Участник разбанен"),
@@ -875,6 +876,8 @@ class SetupLoggingView(discord.ui.View):
             discord.SelectOption(label="Снятие мута", value="pun_unmute", emoji="🔊", description="Мут снят"),
             discord.SelectOption(label="Варн", value="pun_warn", emoji="⚠️", description="Выдано предупреждение"),
             discord.SelectOption(label="Снятие варна", value="pun_unwarn", emoji="🗑️", description="Предупреждение снято"),
+            discord.SelectOption(label="Страйк", value="pun_strike", emoji="🔨", description="Модератор получил страйк"),
+            discord.SelectOption(label="Снятие страйка", value="pun_unstrike", emoji="♻️", description="Страйк снят"),
             discord.SelectOption(label="Чёрный список", value="pun_blacklist", emoji="🚫", description="Участник внесён в ЧС"),
             discord.SelectOption(label="Снятие с ЧС", value="pun_unblacklist", emoji="♻️", description="Участник снят с ЧС"),
             discord.SelectOption(label="Настройки", value="settings", emoji="⚙️", description="Изменения настроек и прав"),
@@ -885,7 +888,8 @@ class SetupLoggingView(discord.ui.View):
         await interaction.response.defer()
         events_subset = [
             "pun_ban", "pun_unban", "pun_kick", "pun_mute", "pun_unmute",
-            "pun_warn", "pun_unwarn", "pun_blacklist", "pun_unblacklist", "settings",
+            "pun_warn", "pun_unwarn", "pun_strike", "pun_unstrike",
+            "pun_blacklist", "pun_unblacklist", "settings",
         ]
         config = await self.db.get_guild_config(str(self.guild_id))
         log_events = config.get("log_events", {})
