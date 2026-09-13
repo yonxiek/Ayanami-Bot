@@ -373,6 +373,7 @@ class Database:
             ('daily_rewards', 'streak', 'INTEGER DEFAULT 0'),
             ('daily_quests', 'is_random', 'INTEGER DEFAULT 0'),
             ('users', 'last_xp_time', 'TEXT'),
+            ('users', 'cases_opened', 'INTEGER DEFAULT 0'),
         ]
 
         try:

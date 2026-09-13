@@ -98,6 +98,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="ИИ-модерация", value="ai_mod", emoji="🛡️", description="Авто-проверка сообщений через Gemini"),
             discord.SelectOption(label="Кланы", value="clans", emoji="⚔️", description="Настройка кланов сервера"),
             discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
+            discord.SelectOption(label="Кейсы", value="cases", emoji="🎁", description="Кейсы с дропом ролей, карточек и монет"),
             discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
         ]
         extra_options = [
@@ -141,6 +142,7 @@ class DashboardView(discord.ui.LayoutView):
             "ai_mod": lambda: SetupAIModView(self.cog, db, self.guild_id),
             "clans": lambda: SetupClansView(self.cog, db, self.guild_id),
             "cards": lambda: SetupCardsView(self.cog, db, self.guild_id),
+            "cases": lambda: SetupCasesView(self.cog, db, self.guild_id),
             "github": lambda: SetupGithubView(self.cog, db, self.guild_id),
             "webhooks": lambda: SetupWebhookView(self.cog, db, self.guild_id),
             "data": lambda: SetupDataView(self.cog, db, self.guild_id),
@@ -762,6 +764,7 @@ class SetupLoggingView(discord.ui.View):
         config = await self.db.get_guild_config(str(self.guild_id))
         log_ch = config.get("log_channel_id")
         log_events = config.get("log_events", {})
+        log_bot = "🟢 Да" if config.get("log_bot_actions", True) is not False else "🔴 Нет"
         event_names = {
             "msg_delete": "Удаление сообщений", "msg_edit": "Редактирование",
             "member_join": "Вход участника", "member_leave": "Выход участника",
@@ -789,6 +792,7 @@ class SetupLoggingView(discord.ui.View):
         lines = [
             "### Логирование",
             f"**Канал:** {f'<#{log_ch}>' if log_ch else '❌ Не настроен'}",
+            f"**Логировать ботов:** {log_bot}",
             f"**Включено ({len(enabled)}):** {', '.join(enabled) if enabled else 'никакие'}",
         ]
         if disabled:
@@ -904,6 +908,15 @@ class SetupLoggingView(discord.ui.View):
             f"✅ Наказания/настройки: {len(select.values)}/{len(events_subset)} включено",
             ephemeral=True
         )
+
+    @discord.ui.button(label="Логировать ботов", emoji="🤖", style=discord.ButtonStyle.blurple, row=3)
+    async def btn_toggle_bots(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        new_value = not config.get("log_bot_actions", True)
+        await self.db.update_config_field(str(self.guild_id), "log_bot_actions", new_value)
+        state = "включено" if new_value else "отключено"
+        await log_settings_change(interaction, "Логирование", f"**Действие:** логирование действий других ботов {state}")
+        await interaction.response.send_message(f"🤖 Логирование действий ботов: **{state}**", ephemeral=True)
 
     @discord.ui.button(label="Тест лога", emoji="🧪", style=discord.ButtonStyle.green, row=3)
     async def btn_test_log(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3667,6 +3680,216 @@ class SetupCardsView(discord.ui.View):
         embed = discord.Embed(title="🃏 Карточки — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   КЕЙСЫ
+# ==========================================
+
+class SetupCasesView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Список кейсов", emoji="🎁", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_cases(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        cursor = await self.db.conn.execute(
+            "SELECT id, name, emoji, price, enabled FROM cases WHERE guild_id = ? ORDER BY id", (str(self.guild_id),)
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.followup.send("📭 Кейсов ещё нет. Создайте на этой панели («Создать кейс»).", ephemeral=True)
+        lines = []
+        for r in rows:
+            status = "🟢" if r["enabled"] else "🔴"
+            cursor2 = await self.db.conn.execute(
+                "SELECT COUNT(*) FROM case_items WHERE guild_id = ? AND case_id = ?", (str(self.guild_id), r["id"])
+            )
+            row2 = await cursor2.fetchone()
+            item_count = row2[0] if row2 else 0
+            lines.append(f"{status} `{r['id']}.` {r['emoji']} **{r['name']}** — {r['price']} монеток, предметов: {item_count}")
+        embed = discord.Embed(title="🎁 Кейсы сервера", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text=f"Всего: {len(rows)}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Создать кейс", emoji="➕", style=discord.ButtonStyle.success, row=0)
+    async def btn_create_case(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CaseCreateModal())
+
+    @discord.ui.button(label="Добавить предмет", emoji="🎁", style=discord.ButtonStyle.success, row=1)
+    async def btn_add_item(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CaseItemAddModal(self.guild_id))
+
+    @discord.ui.button(label="Предметы кейса", emoji="📦", style=discord.ButtonStyle.blurple, row=1)
+    async def btn_items(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CaseItemsModal())
+
+    @discord.ui.button(label="Удалить кейс", emoji="🗑️", style=discord.ButtonStyle.red, row=2)
+    async def btn_remove_case(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CaseRemoveModal())
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        lines = [
+            "### Кейсы",
+            "",
+            "**Для админов:**",
+            "• «Создать кейс» — название, цена, emoji",
+            "• «Добавить предмет» — роль / карточка / монеты + шанс",
+            "• «Предметы кейса» — просмотр предметов по ID",
+            "• «Удалить кейс» — удаление вместе с предметами",
+            "",
+            "**Для игроков:**",
+            "• `/caselist` — список кейсов",
+            "• `/caseopen <ID>` — открыть кейс за монетки",
+        ]
+        embed = discord.Embed(title="🎁 Кейсы — настройки", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class CaseCreateModal(discord.ui.Modal, title="🎁 Новый кейс"):
+    name = discord.ui.TextInput(label="Название кейса", required=True, max_length=50)
+    price = discord.ui.TextInput(label="Цена открытия (монетки)", required=False, max_length=15, default="100")
+    emoji = discord.ui.TextInput(label="Emoji", required=False, max_length=10, default="🎁")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            price = max(0, int(self.price.value))
+        except ValueError:
+            price = 100
+        db = Database()
+        cursor = await db.conn.execute(
+            "INSERT INTO cases (guild_id, name, emoji, price, enabled) VALUES (?, ?, ?, ?, 1)",
+            (str(interaction.guild.id), self.name.value.strip(), self.emoji.value or "🎁", price)
+        )
+        await db.conn.commit()
+        await log_settings_change(interaction, "Кейсы", f"**Создан кейс:** {self.emoji.value} {self.name.value} (ID `{cursor.lastrowid}`, цена {price})")
+        await interaction.response.send_message(f"✅ Кейс **{self.emoji.value} {self.name.value}** создан! ID: `{cursor.lastrowid}`.", ephemeral=True)
+
+
+class CaseRemoveModal(discord.ui.Modal, title="🗑️ Удалить кейс"):
+    case_id = discord.ui.TextInput(label="ID кейса", required=True, max_length=10)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            case_id = int(self.case_id.value)
+        except ValueError:
+            return await interaction.response.send_message("❌ ID должен быть числом.", ephemeral=True)
+        db = Database()
+        guild_id = str(interaction.guild.id)
+        cursor = await db.conn.execute("SELECT name, emoji FROM cases WHERE guild_id = ? AND id = ?", (guild_id, case_id))
+        row = await cursor.fetchone()
+        if not row:
+            return await interaction.response.send_message("❌ Кейс не найден.", ephemeral=True)
+        await db.conn.execute("DELETE FROM cases WHERE guild_id = ? AND id = ?", (guild_id, case_id))
+        await db.conn.execute("DELETE FROM case_items WHERE guild_id = ? AND case_id = ?", (guild_id, case_id))
+        await db.conn.commit()
+        await log_settings_change(interaction, "Кейсы", f"**Удалён кейс:** {row['emoji']} {row['name']} (ID `{case_id}`)")
+        await interaction.response.send_message(f"🗑️ Кейс **{row['emoji']} {row['name']}** удалён.", ephemeral=True)
+
+
+class CaseItemAddModal(discord.ui.Modal, title="🎁 Предмет в кейс"):
+    case_id = discord.ui.TextInput(label="ID кейса", required=True, max_length=10)
+    item_type = discord.ui.TextInput(label="Тип (role / card / coins)", required=True, max_length=10, default="coins")
+    value = discord.ui.TextInput(label="Значение: роль/ID карточки/монеты", required=True, max_length=120)
+    drop_rate = discord.ui.TextInput(label="Шанс 0.01–1.0", required=False, max_length=10, default="0.1")
+
+    def __init__(self, guild_id: int):
+        super().__init__()
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            case_id = int(self.case_id.value)
+        except ValueError:
+            return await interaction.response.send_message("❌ ID кейса должен быть числом.", ephemeral=True)
+        item_type = self.item_type.value.strip().lower()
+        if item_type not in ("role", "card", "coins"):
+            return await interaction.response.send_message("❌ Тип должен быть: role / card / coins.", ephemeral=True)
+        try:
+            drop_rate = float(self.drop_rate.value.replace(",", "."))
+        except ValueError:
+            drop_rate = 0.1
+        drop_rate = max(0.0, min(1.0, drop_rate))
+
+        db = Database()
+        guild_id = str(interaction.guild.id)
+        cursor = await db.conn.execute("SELECT 1 FROM cases WHERE guild_id = ? AND id = ?", (guild_id, case_id))
+        if not await cursor.fetchone():
+            return await interaction.response.send_message("❌ Кейс не найден.", ephemeral=True)
+
+        value = self.value.value.strip()
+        if item_type == "role":
+            role = (interaction.guild.get_role(int(value)) if value.isdigit()
+                    else discord.utils.get(interaction.guild.roles, mention=value)
+                    or discord.utils.get(interaction.guild.roles, name=value))
+            if not role:
+                return await interaction.response.send_message("❌ Роль не найдена.", ephemeral=True)
+            value = str(role.id)
+        elif item_type == "coins":
+            try:
+                int(value)
+            except ValueError:
+                return await interaction.response.send_message("❌ Для монет укажите число.", ephemeral=True)
+        elif item_type == "card":
+            card = await db.get_card(guild_id, value)
+            if not card:
+                return await interaction.response.send_message("❌ Карточка с таким ID не найдена (сначала добавьте её в разделе «Карточки»).", ephemeral=True)
+            value = card["card_id"]
+
+        await db.conn.execute(
+            "INSERT INTO case_items (guild_id, case_id, item_type, item_value, drop_rate) VALUES (?, ?, ?, ?, ?)",
+            (guild_id, case_id, item_type, value, drop_rate))
+        await db.conn.commit()
+        label = {"role": "Роль", "card": "Карточка", "coins": "Монетки"}.get(item_type, item_type)
+        await log_settings_change(interaction, "Кейсы", f"**Кейс `{case_id}`:** + предмет {label} `{value}` (шанс {drop_rate:.0%})")
+        await interaction.response.send_message(f"✅ В кейс `{case_id}` добавлен предмет **{label}** `{value}` (шанс {drop_rate:.0%}).", ephemeral=True)
+
+
+class CaseItemsModal(discord.ui.Modal, title="📦 Предметы кейса"):
+    case_id = discord.ui.TextInput(label="ID кейса", required=True, max_length=10)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            case_id = int(self.case_id.value)
+        except ValueError:
+            return await interaction.response.send_message("❌ ID должен быть числом.", ephemeral=True)
+        db = Database()
+        guild_id = str(interaction.guild.id)
+        cursor = await db.conn.execute("SELECT emoji, name FROM cases WHERE guild_id = ? AND id = ?", (guild_id, case_id))
+        case = await cursor.fetchone()
+        if not case:
+            return await interaction.response.send_message("❌ Кейс не найден.", ephemeral=True)
+        cursor = await db.conn.execute(
+            "SELECT id, item_type, item_value, drop_rate FROM case_items WHERE guild_id = ? AND case_id = ?",
+            (guild_id, case_id))
+        rows = await cursor.fetchall()
+        if not rows:
+            return await interaction.response.send_message(f"{case['emoji']} **{case['name']}** — предметов пока нет.", ephemeral=True)
+        labels = {"role": "Роль 🎭", "card": "Карточка 🃏", "coins": "Монетки 🪙"}
+        lines = []
+        for r in rows:
+            show = r["item_value"]
+            if r["item_type"] == "role":
+                show = f"<@&{r['item_value']}>" if interaction.guild.get_role(int(r["item_value"])) else r["item_value"]
+            lines.append(f"`{r['id']}.` {labels.get(r['item_type'], r['item_type'])} — **{show}** — {r['drop_rate']:.0%}")
+        embed = discord.Embed(
+            title=f"{case['emoji']} {case['name']} — предметы",
+            description="\n".join(lines[:25]),
+            color=Colors.MAIN,
+        )
+        embed.set_footer(text=f"Всего: {len(rows)}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ==========================================
+#   МОДАЛКИ И ПАНЕЛИ: ТИКЕТЫ / КАРТОЧКИ / GITHUB / WEBHOOKS
+# ==========================================
 
 
 # ==========================================

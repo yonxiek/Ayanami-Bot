@@ -22,6 +22,14 @@ class Logging(VoiceTrackerMixin, commands.Cog):
             return True
         return log_events.get(event, True)
 
+    async def log_bot_actions_enabled(self, guild_id: int) -> bool:
+        """Включено ли логирование действий других ботов (по умолчанию True)."""
+        config = await self.db.get_guild_config(str(guild_id))
+        return config.get("log_bot_actions", True) is not False
+
+    def _bot_tag(self, author) -> str:
+        return " 🤖" if getattr(author, "bot", False) else ""
+
     async def get_log_channel(self, guild_id: int):
         config = await self.db.get_guild_config(str(guild_id))
         ch_id = config.get("log_channel_id")
@@ -75,6 +83,20 @@ class Logging(VoiceTrackerMixin, commands.Cog):
             pass
         return None
 
+    async def _get_ban_actor(self, guild: discord.Guild, user_id: int, action: discord.AuditLogAction):
+        """Возвращает актора аудит-записи (включая ботов), исключая самого бота. (actor, reason)."""
+        import asyncio
+        await asyncio.sleep(1.0)
+        try:
+            async for entry in guild.audit_logs(limit=5, action=action):
+                if entry.target and getattr(entry.target, 'id', None) != user_id:
+                    continue
+                if entry.user and getattr(entry.user, 'id', None) != self.bot.user.id:
+                    return entry.user, getattr(entry, 'reason', None)
+        except (discord.NotFound, discord.HTTPException, Exception):
+            pass
+        return None, None
+
     def _actor_footer(self, text: str, actor):
         if actor:
             return f"{text}: {actor.display_name} ({actor.id})"
@@ -86,7 +108,9 @@ class Logging(VoiceTrackerMixin, commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
-        if not message.guild or message.author.bot:
+        if not message.guild:
+            return
+        if message.author.bot and not await self.log_bot_actions_enabled(message.guild.id):
             return
         if not await self.is_event_enabled(message.guild.id, "msg_delete"):
             return
@@ -94,7 +118,8 @@ class Logging(VoiceTrackerMixin, commands.Cog):
 
         embed = discord.Embed(title="Message Deleted", color=discord.Color.red(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
-        embed.add_field(name="Author", value=f"{message.author.mention} (`{message.author.id}`)", inline=True)
+        author_label = f"{message.author.mention} 🤖" if message.author.bot else f"{message.author.mention}"
+        embed.add_field(name="Author", value=f"{author_label} (`{message.author.id}`)", inline=True)
         embed.add_field(name="Channel", value=message.channel.mention, inline=True)
         if actor and actor.id != message.author.id:
             embed.add_field(name="Deleted By", value=f"{actor.mention}", inline=True)
@@ -116,9 +141,15 @@ class Logging(VoiceTrackerMixin, commands.Cog):
         if not await self.is_event_enabled(guild.id, "msg_delete"):
             return
 
+        bot_log = await self.log_bot_actions_enabled(guild.id)
         by_author = {}
+        skipped_bots = 0
         for msg in messages:
             if msg.author.bot:
+                if bot_log:
+                    by_author.setdefault(msg.author, []).append(msg)
+                else:
+                    skipped_bots += 1
                 continue
             by_author.setdefault(msg.author, []).append(msg)
 
@@ -131,7 +162,10 @@ class Logging(VoiceTrackerMixin, commands.Cog):
 
         lines = []
         for author, msgs in by_author.items():
-            lines.append(f"{author.mention} — {len(msgs)}")
+            tag = " 🤖" if author.bot else ""
+            lines.append(f"{author.mention}{tag} — {len(msgs)}")
+        if skipped_bots:
+            lines.append(f"🤖 скрыто сообщений ботов: {skipped_bots}")
         embed.add_field(name="Authors", value="\n".join(lines), inline=False)
 
         preview = []
@@ -150,7 +184,9 @@ class Logging(VoiceTrackerMixin, commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
-        if before.content == after.content or not before.guild or before.author.bot:
+        if before.content == after.content or not before.guild:
+            return
+        if before.author.bot and not await self.log_bot_actions_enabled(before.guild.id):
             return
         if not await self.is_event_enabled(before.guild.id, "msg_edit"):
             return
@@ -158,7 +194,8 @@ class Logging(VoiceTrackerMixin, commands.Cog):
         embed = discord.Embed(title="Message Edited", color=discord.Color.orange(), timestamp=datetime.now(timezone.utc))
         embed.set_author(name=before.author.display_name, icon_url=before.author.display_avatar.url)
         embed.add_field(name="Channel", value=before.channel.mention, inline=True)
-        embed.add_field(name="Author", value=before.author.mention, inline=True)
+        author_label = f"{before.author.mention} 🤖" if before.author.bot else before.author.mention
+        embed.add_field(name="Author", value=author_label, inline=True)
         if before.content:
             embed.add_field(name="Before", value=f"```\n{before.content[:1000]}\n```", inline=False)
         if after.content:
@@ -203,6 +240,57 @@ class Logging(VoiceTrackerMixin, commands.Cog):
             embed.add_field(name="Boost", value=f"Until <t:{int(member.premium_since.timestamp())}:R>", inline=True)
         embed.set_footer(text="Ayanami System")
         await self.send_log(member.guild.id, embed)
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild, user):
+        """Логирует баны, включая те, что совершили другие боты (через audit log)."""
+        if not await self.is_event_enabled(guild.id, "pun_ban"):
+            return
+        actor, reason = await self._get_ban_actor(guild, getattr(user, 'id', 0), discord.AuditLogAction.ban)
+        if actor is None:
+            return
+        tag = " 🤖" if getattr(actor, "bot", False) else ""
+        is_bot = getattr(actor, "bot", False)
+        if is_bot and not await self.log_bot_actions_enabled(guild.id):
+            return
+
+        target_id = getattr(user, 'id', 0)
+        if self._is_duplicate(guild.id, f"ban:{target_id}", target_id):
+            return
+
+        actor_name = getattr(actor, 'display_name', getattr(actor, 'name', '?'))
+        actor_id = getattr(actor, 'id', 0)
+        embed = discord.Embed(title="Member Banned", color=discord.Color.dark_red(), timestamp=datetime.now(timezone.utc))
+        embed.set_author(name=getattr(user, 'display_name', getattr(user, 'name', '?')), icon_url=user.display_avatar.url)
+        embed.add_field(name="Member", value=f"{getattr(user, 'mention', user.id)} (`{user.id}`)", inline=True)
+        embed.add_field(name="Banned By", value=f"{actor_name}{tag} ({actor_id})", inline=True)
+        if reason:
+            embed.add_field(name="Reason", value=reason[:1000], inline=False)
+        embed.set_footer(text="Ayanami System")
+        await self.send_log(guild.id, embed)
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, guild, user):
+        if not await self.is_event_enabled(guild.id, "pun_unban"):
+            return
+        actor, reason = await self._get_ban_actor(guild, getattr(user, 'id', 0), discord.AuditLogAction.unban)
+        if actor is None:
+            return
+        tag = " 🤖" if getattr(actor, "bot", False) else ""
+        is_bot = getattr(actor, "bot", False)
+        if is_bot and not await self.log_bot_actions_enabled(guild.id):
+            return
+
+        actor_name = getattr(actor, 'display_name', getattr(actor, 'name', '?'))
+        actor_id = getattr(actor, 'id', 0)
+        embed = discord.Embed(title="Member Unbanned", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        embed.set_author(name=getattr(user, 'display_name', getattr(user, 'name', '?')), icon_url=user.display_avatar.url)
+        embed.add_field(name="Member", value=f"{getattr(user, 'mention', user.id)} (`{user.id}`)", inline=True)
+        embed.add_field(name="Unbanned By", value=f"{actor_name}{tag} ({actor_id})", inline=True)
+        if reason:
+            embed.add_field(name="Reason", value=reason[:1000], inline=False)
+        embed.set_footer(text="Ayanami System")
+        await self.send_log(guild.id, embed)
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):

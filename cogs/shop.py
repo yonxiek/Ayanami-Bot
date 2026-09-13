@@ -273,7 +273,7 @@ class Shop(commands.Cog):
         embed.set_footer(text="Ayanami System")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="inventory", description="Ваш инвентарь")
+    @app_commands.command(name="inventory", description="Ваш инвентарь: баланс, карточки, товары и титулы")
     @app_commands.describe(member="Участник, чей инвентарь показать")
     async def inventory(self, interaction: discord.Interaction, member: discord.Member = None):
         if not interaction.guild:
@@ -284,32 +284,55 @@ class Shop(commands.Cog):
         guild_id = str(interaction.guild.id)
         user_id = str(target.id)
 
-        items = await self.db.get_user_inventory(guild_id, user_id)
-        if not items:
-            embed = discord.Embed(
-                title="Инвентарь",
-                description="Ваш инвентарь пуст.",
-                color=Colors.MAIN,
-            )
-            return await interaction.followup.send(embed=embed)
+        user = await self.db.get_or_create_user(guild_id, user_id)
+        balance = user.get("balance", 0)
+        opened_cases = user.get("cases_opened", 0)
 
-        desc = ""
-        for item in items:
+        lines = [f"🪙 **Баланс:** {balance} {AyanamiUI.E_RP}"]
+
+        cursor = await self.db.conn.execute(
+            "SELECT cc.card_id, cc.name, cc.emoji, cc.rarity, uc.quantity "
+            "FROM user_cards uc JOIN collectible_cards cc ON uc.card_id = cc.card_id "
+            "AND uc.guild_id = cc.guild_id "
+            "WHERE uc.guild_id = ? AND uc.user_id = ? ORDER BY uc.obtained_at",
+            (guild_id, user_id))
+        cards = await cursor.fetchall()
+        if cards:
+            cards_lines = []
+            for c in cards:
+                cards_lines.append(f"{c['emoji']} **{c['name']}** x{c['quantity']}`{c['rarity']}`")
+            lines.append(f"\n🃏 **Карточки ({len(cards)}):**\n> " + "\n> ".join(cards_lines[:20]))
+            if len(cards) > 20:
+                lines.append(f"> …и ещё {len(cards) - 20}")
+
+        items = await self.db.get_user_inventory(guild_id, user_id)
+        if items:
             type_emoji = {
-                "role": "🎭",
-                "title": "🏷️",
-                "box": "🎁",
-                "color": "🌈",
-                "temp_role": "⏳",
-                "lootbox": "🎰",
-                "xp_boost": "⚡",
+                "role": "🎭", "title": "🏷️", "box": "🎁", "color": "🌈",
+                "temp_role": "⏳", "lootbox": "🎰", "xp_boost": "⚡",
                 "nickname_token": "✏️",
-            }.get(item.get('item_type'), "📦")
-            desc += f"> {type_emoji} **{item['name']}** x{item['quantity']}\n"
+            }
+            item_lines = []
+            for item in items:
+                item_lines.append(f"{type_emoji.get(item.get('item_type'), '📦')} **{item['name']}** x{item['quantity']}")
+            lines.append("\n🎒 **Товары:**\n> " + "\n> ".join(item_lines[:15]))
+            if len(item_lines) > 15:
+                lines.append(f"> …и ещё {len(item_lines) - 15}")
+
+        titles = await self.db.get_user_titles(guild_id, user_id)
+        if titles:
+            title_lines = []
+            for t in titles:
+                active = " ✅" if t.get("active") else ""
+                title_lines.append(f"{t.get('emoji', '🏷️')} {t['title']}{active}")
+            lines.append("\n🏷️ **Титулы:**\n> " + "\n> ".join(title_lines[:20]))
+
+        if opened_cases:
+            lines.append(f"\n🎁 **Открыто кейсов:** {opened_cases}")
 
         embed = discord.Embed(
             title=f"Инвентарь — {target.display_name}",
-            description=desc,
+            description="\n".join(lines) if items or cards or titles else f"{lines[0]}\n\nПусто, но это исправимо!",
             color=Colors.MAIN,
         )
         embed.set_thumbnail(url=target.display_avatar.url)

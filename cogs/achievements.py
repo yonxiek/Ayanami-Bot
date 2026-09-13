@@ -33,6 +33,11 @@ ACHIEVEMENTS = {
     "first_card": ("🃏", "Коллекционер", "Выбросьте первую карточку"),
     "cards_10": ("📚", "Библиофил", "Соберите 10 уникальных карточек"),
     "legendary_card": ("🌟", "Охотник за легендами", "Выбросьте легендарную карточку"),
+    # --- Кейсы ---
+    "case_open_1": ("🎁", "Первое открытие", "Откройте свой первый кейс"),
+    "case_open_10": ("📦", "Кейс-мастер", "Откройте 10 кейсов"),
+    # --- Рейды ---
+    "raid_5": ("🛡️", "Защитник", "Примите участие в 5 рейдах"),
     # --- Кланы ---
     "clan_create": ("🚩", "Основатель", "Создайте свой клан"),
     "clan_join": ("🤝", "Клановец", "Вступите в клан"),
@@ -43,6 +48,30 @@ ACHIEVEMENTS = {
     "first_event": ("🎉", "Организатор", "Создайте первое событие"),
     "event_rsvp": ("👋", "Активный участник", "Отметьтесь на событии"),
 }
+
+CATEGORIES = {
+    "💬 Общение": ["first_message", "messages_100", "messages_1000", "voice_60", "voice_300"],
+    "📈 Прогресс": ["level_5", "level_10", "level_20"],
+    "📜 Квесты и награды": ["first_quest", "quests_10", "daily_3", "daily_7", "first_buy", "rich_1000", "rich_10000"],
+    "⚔️ Сражения": ["duel_win", "duel_10", "roulette_win"],
+    "🕒 Напоминания": ["reminder_1"],
+    "📩 Тикеты": ["first_ticket", "tickets_5"],
+    "🃏 Карточки": ["first_card", "cards_10", "legendary_card"],
+    "🎁 Кейсы": ["case_open_1", "case_open_10"],
+    "🛡️ Рейды": ["raid_5"],
+    "🚩 Кланы": ["clan_create", "clan_join"],
+    "🗳️ Голосования": ["first_poll", "poll_vote"],
+    "🎉 События": ["first_event", "event_rsvp"],
+}
+
+ALL_ACHIEVEMENT_IDS = list(ACHIEVEMENTS.keys())
+
+
+def progress_bar(earned: int, total: int, size: int = 10) -> str:
+    total = max(1, total)
+    earned = max(0, min(earned, total))
+    filled = round(size * earned / total)
+    return "▰" * filled + "▱" * (size - filled)
 
 
 async def award_achievement(db: Database, guild_id: str, user_id: str, aid: str, member: discord.Member = None) -> tuple:
@@ -86,6 +115,7 @@ async def check_all_achievements(db: Database, guild_id: str, user_id: str, memb
     total_voice = user.get("total_voice_minutes", 0)
     level = user.get("level", 1)
     balance = user.get("balance", 0)
+    raids = user.get("raids_attended", 0)
 
     checks = [
         (total_msgs >= 1, "first_message"),
@@ -98,6 +128,7 @@ async def check_all_achievements(db: Database, guild_id: str, user_id: str, memb
         (level >= 20, "level_20"),
         (balance >= 1000, "rich_1000"),
         (balance >= 10000, "rich_10000"),
+        (raids >= 5, "raid_5"),
     ]
 
     try:
@@ -140,17 +171,38 @@ class Achievements(commands.Cog):
         earned = await self.db.get_user_achievements(guild_id, user_id)
         earned_ids = {e["achievement_id"] for e in earned}
 
-        lines = []
-        for aid, (emoji, name, desc) in ACHIEVEMENTS.items():
-            status = "✅" if aid in earned_ids else "🔒"
-            lines.append(f"{status} {emoji} **{name}** — {desc}")
+        total_all = len(ALL_ACHIEVEMENT_IDS)
+        lines = [f"{progress_bar(len(earned_ids), total_all)} **{len(earned_ids)} / {total_all}**"]
+        for cat, aids in CATEGORIES.items():
+            cat_earned = sum(1 for a in aids if a in earned_ids)
+            cat_hidden = sum(1 for a in aids if a not in ACHIEVEMENTS)
+            if cat_hidden == len(aids):
+                continue
+            lines.append(f"\n### {cat} — {progress_bar(cat_earned, len(aids) - cat_hidden, 8)} {cat_earned}/{len(aids) - cat_hidden}")
+            for aid in aids:
+                info = ACHIEVEMENTS.get(aid)
+                if not info:
+                    continue
+                status = "✅" if aid in earned_ids else "🔒"
+                lines.append(f"{status} {info[0]} **{info[1]}** — {info[2]}")
+
+        leftover = [aid for aid in ALL_ACHIEVEMENT_IDS if aid not in {a for aids in CATEGORIES.values() for a in aids}]
+        if leftover:
+            lines.append("\n### Другое")
+            for aid in leftover:
+                status = "✅" if aid in earned_ids else "🔒"
+                info = ACHIEVEMENTS[aid]
+                lines.append(f"{status} {info[0]} **{info[1]}** — {info[2]}")
+
+        if len("\n".join(lines)) > 4000:
+            lines = lines[:40]
 
         embed = discord.Embed(
             title=f"🏅 Достижения — {target.display_name}",
             description="\n".join(lines),
             color=Colors.MAIN,
         )
-        embed.set_footer(text=f"Выполнено: {len(earned_ids)} из {len(ACHIEVEMENTS)}")
+        embed.set_footer(text=f"Выполнено: {len(earned_ids)} из {total_all}")
         embed.set_thumbnail(url=target.display_avatar.url)
         await interaction.followup.send(embed=embed)
 

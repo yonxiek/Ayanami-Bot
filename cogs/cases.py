@@ -5,6 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from cogs.achievements import award_achievement
 from db import Database
 from ui_components import Colors
 
@@ -49,99 +50,6 @@ class Cases(commands.Cog):
                 return item
         return items[-1]
 
-    @app_commands.command(name="casecreate", description="Создать кейс (цена, emoji)")
-    @app_commands.describe(name="Название кейса", price="Цена открытия в монетках", emoji="Emoji кейса")
-    @app_commands.default_permissions(administrator=True)
-    async def casecreate(self, interaction: discord.Interaction, name: str, price: int = 100, emoji: str = "🎁"):
-        if price < 0:
-            return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Цена не может быть отрицательной."), ephemeral=True)
-        cursor = await self.db.conn.execute(
-            'INSERT INTO cases (guild_id, name, emoji, price, enabled) VALUES (?, ?, ?, ?, 1)',
-            (str(interaction.guild.id), name, emoji, price))
-        await self.db.conn.commit()
-        embed = discord.Embed(
-            color=Colors.SUCCESS,
-            description=f"✅ Кейс **{emoji} {name}** создан! ID: `{cursor.lastrowid}`, цена: **{price}** монеток.\n"
-                        f"Добавьте предметы через `/caseitem {cursor.lastrowid}`.")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="caseremove", description="Удалить кейс вместе с предметами")
-    @app_commands.describe(case_id="ID кейса")
-    @app_commands.default_permissions(administrator=True)
-    async def caseremove(self, interaction: discord.Interaction, case_id: int):
-        guild_id = str(interaction.guild.id)
-        case = await self._get_case(guild_id, case_id)
-        if not case:
-            return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Кейс не найден."), ephemeral=True)
-        await self.db.conn.execute('DELETE FROM cases WHERE guild_id = ? AND id = ?', (guild_id, case_id))
-        await self.db.conn.execute('DELETE FROM case_items WHERE guild_id = ? AND case_id = ?', (guild_id, case_id))
-        await self.db.conn.commit()
-        await interaction.response.send_message(embed=discord.Embed(color=Colors.SUCCESS, description=f"🗑️ Кейс **{case['emoji']} {case['name']}** удалён."))
-
-    @app_commands.command(name="caseitem", description="Добавить предмет в кейс")
-    @app_commands.describe(
-        case_id="ID кейса",
-        item_type="Тип предмета",
-        value="Значение: ID роли / ID карточки / количество монет",
-        drop_rate="Шанс выпадения (0.01 - 1.0)",
-    )
-    @app_commands.choices(item_type=[
-        app_commands.Choice(name="Роль", value="role"),
-        app_commands.Choice(name="Карточка", value="card"),
-        app_commands.Choice(name="Монетки", value="coins"),
-    ])
-    @app_commands.default_permissions(administrator=True)
-    async def caseitem(self, interaction: discord.Interaction, case_id: int, item_type: app_commands.Choice[str], value: str, drop_rate: float = 0.1):
-        guild_id = str(interaction.guild.id)
-        case = await self._get_case(guild_id, case_id)
-        if not case:
-            return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Кейс не найден."), ephemeral=True)
-        value = value.strip()
-        if item_type.value == "role":
-            role = discord.utils.get(interaction.guild.roles, id=int(value)) if value.isdigit() else discord.utils.get(interaction.guild.roles, mention=value) or discord.utils.get(interaction.guild.roles, name=value)
-            if not role:
-                return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Роль не найдена."), ephemeral=True)
-            value = str(role.id)
-        elif item_type.value == "coins":
-            try:
-                int(value)
-            except ValueError:
-                return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Для монет укажите число."), ephemeral=True)
-        elif item_type.value == "card":
-            card = await self.db.get_card(guild_id, value)
-            if not card:
-                return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Карточка с таким ID не найдена."), ephemeral=True)
-            value = card['card_id']
-
-        drop_rate = max(0.0, min(1.0, drop_rate))
-        await self.db.conn.execute(
-            'INSERT INTO case_items (guild_id, case_id, item_type, item_value, drop_rate) VALUES (?, ?, ?, ?, ?)',
-            (guild_id, case_id, item_type.value, value, drop_rate))
-        await self.db.conn.commit()
-
-        label = ITEM_TYPES[item_type.value]
-        embed = discord.Embed(color=Colors.SUCCESS, description=f"✅ В кейс `{case_id}` добавлен предмет **{label}** `{value}` (шанс {drop_rate:.0%}).")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="caseitems", description="Список предметов кейса")
-    @app_commands.describe(case_id="ID кейса")
-    async def caseitems(self, interaction: discord.Interaction, case_id: int):
-        guild_id = str(interaction.guild.id)
-        case = await self._get_case(guild_id, case_id)
-        if not case:
-            return await interaction.response.send_message(embed=discord.Embed(color=Colors.ERROR, description="❌ Кейс не найден."), ephemeral=True)
-        items = await self._get_items(guild_id, case_id)
-        lines = []
-        for i, item in enumerate(items, 1):
-            label = ITEM_TYPES.get(item['item_type'], item['item_type'])
-            value = item['item_value'] if item['item_type'] != "role" else (f"<@&{item['item_value']}>" if (interaction.guild.get_role(int(item['item_value']))) else item['item_value'])
-            lines.append(f"`{i}.` {label} — **{value}** — шанс {item['drop_rate']:.0%}")
-        embed = discord.Embed(
-            title=f"{case['emoji']} {case['name']} — предметы",
-            description="\n".join(lines) if lines else "Предметов пока нет.",
-            color=Colors.MAIN)
-        await interaction.response.send_message(embed=embed)
-
     @app_commands.command(name="caselist", description="Список кейсов на сервере")
     async def caselist(self, interaction: discord.Interaction):
         cursor = await self.db.conn.execute(
@@ -174,6 +82,19 @@ class Cases(commands.Cog):
 
         item = await self._roll_item(guild_id, case_id)
         await self.db.update_user_balance(guild_id, user_id, -case['price'])
+        await self.db.conn.execute(
+            "UPDATE users SET cases_opened = COALESCE(cases_opened, 0) + 1 WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id))
+        await self.db.conn.commit()
+
+        cursor = await self.db.conn.execute(
+            "SELECT COALESCE(cases_opened, 0) AS opened FROM users WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id))
+        opened_row = await cursor.fetchone()
+        opened = opened_row["opened"] if opened_row else 0
+        await award_achievement(self.db, guild_id, user_id, "case_open_1", interaction.user)
+        if opened >= 10:
+            await award_achievement(self.db, guild_id, user_id, "case_open_10", interaction.user)
 
         if not item:
             await self.db.update_user_balance(guild_id, user_id, case['price'] // 2)
