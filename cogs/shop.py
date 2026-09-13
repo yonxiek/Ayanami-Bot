@@ -1,4 +1,6 @@
 
+import random
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -16,7 +18,7 @@ class ShopView(discord.ui.View):
         self.page = page
         self.per_page = 5
 
-    def update_buttons(self, items):
+    def update_buttons(self, items, cases):
         self.clear_items()
         start = self.page * self.per_page
         end = start + self.per_page
@@ -31,13 +33,30 @@ class ShopView(discord.ui.View):
             btn.callback = self.create_buy_callback(item)
             self.add_item(btn)
 
+        if cases:
+            sel = discord.ui.Select(
+                placeholder="🎁 Открыть кейс...",
+                min_values=1,
+                max_values=1,
+                row=2,
+                options=[
+                    discord.SelectOption(
+                        label=f"{c['emoji']} {c['name']} — {c['price']} {AyanamiUI.E_RP}",
+                        value=str(c['id']),
+                    )
+                    for c in cases[:25]
+                ],
+            )
+            sel.callback = self.case_callback
+            self.add_item(sel)
+
         if self.page > 0:
-            btn = discord.ui.Button(label="◀️ Назад", style=discord.ButtonStyle.gray, custom_id="shop_prev")
+            btn = discord.ui.Button(label="◀️ Назад", style=discord.ButtonStyle.gray, custom_id="shop_prev", row=1)
             btn.callback = self.prev_page
             self.add_item(btn)
 
         if end < len(items):
-            btn = discord.ui.Button(label="Вперед ▶️", style=discord.ButtonStyle.gray, custom_id="shop_next")
+            btn = discord.ui.Button(label="Вперед ▶️", style=discord.ButtonStyle.gray, custom_id="shop_next", row=1)
             btn.callback = self.next_page
             self.add_item(btn)
 
@@ -48,13 +67,21 @@ class ShopView(discord.ui.View):
             await self.cog.execute_buy(interaction, item)
         return callback
 
+    async def case_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("Не ваше меню.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        case_id = int(interaction.data["values"][0])
+        await self.cog.execute_open_case(interaction, case_id)
+
     async def prev_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("Не ваше меню.", ephemeral=True)
         self.page -= 1
         items = await self.cog.db.get_shop_items(self.guild_id)
-        self.update_buttons(items)
-        embed = self.cog.build_shop_embed(items, self.page, self.per_page)
+        cases = await self.cog._get_cases(self.guild_id)
+        self.update_buttons(items, cases)
+        embed = self.cog.build_shop_embed(items, cases, self.page, self.per_page)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def next_page(self, interaction: discord.Interaction):
@@ -62,8 +89,9 @@ class ShopView(discord.ui.View):
             return await interaction.response.send_message("Не ваше меню.", ephemeral=True)
         self.page += 1
         items = await self.cog.db.get_shop_items(self.guild_id)
-        self.update_buttons(items)
-        embed = self.cog.build_shop_embed(items, self.page, self.per_page)
+        cases = await self.cog._get_cases(self.guild_id)
+        self.update_buttons(items, cases)
+        embed = self.cog.build_shop_embed(items, cases, self.page, self.per_page)
         await interaction.response.edit_message(embed=embed, view=self)
 
 
@@ -73,7 +101,7 @@ class Shop(commands.Cog):
         self.bot = bot
         self.db = Database()
 
-    def build_shop_embed(self, items, page=0, per_page=5):
+    def build_shop_embed(self, items, cases=None, page=0, per_page=5):
         start = page * per_page
         end = start + per_page
         page_items = items[start:end]
@@ -100,6 +128,10 @@ class Shop(commands.Cog):
                 f"> **Цена:** {item['price']} {AyanamiUI.E_RP} | {stock_text}\n\n"
             )
 
+        if cases:
+            case_lines = [f"> {c['emoji']} **{c['name']}** — {c['price']} {AyanamiUI.E_RP}" for c in cases]
+            desc += "### 🎁 Кейсы\n" + "\n".join(case_lines) + "\n\n*Открыть можно через меню ниже*"
+
         if not desc:
             desc = "*Магазин пуст*"
 
@@ -111,6 +143,123 @@ class Shop(commands.Cog):
         embed.set_footer(text=f"Всего товаров: {len(items)} | Страница {page + 1}/{total_pages}")
         return embed
 
+    async def _get_cases(self, guild_id: str) -> list:
+        cursor = await self.db.conn.execute(
+            'SELECT id, name, emoji, price, enabled FROM cases WHERE guild_id = ? AND enabled = 1 ORDER BY id',
+            (guild_id,))
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def _get_case(self, guild_id: str, case_id: int) -> dict | None:
+        cursor = await self.db.conn.execute(
+            'SELECT * FROM cases WHERE guild_id = ? AND id = ?', (guild_id, case_id))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def _get_case_items(self, guild_id: str, case_id: int) -> list:
+        cursor = await self.db.conn.execute(
+            'SELECT * FROM case_items WHERE guild_id = ? AND case_id = ?', (guild_id, case_id))
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def _roll_case_item(self, guild_id: str, case_id: int) -> dict | None:
+        items = await self._get_case_items(guild_id, case_id)
+        if not items:
+            return None
+        total = sum(max(0.0, i['drop_rate']) for i in items)
+        if total <= 0:
+            return random.choice(items)
+        roll = random.uniform(0, total)
+        cumulative = 0
+        for item in items:
+            cumulative += max(0.0, item['drop_rate'])
+            if roll <= cumulative:
+                return item
+        return items[-1]
+
+    async def execute_open_case(self, interaction: discord.Interaction, case_id: int):
+        guild_id = str(interaction.guild.id)
+        user_id = str(interaction.user.id)
+        case = await self._get_case(guild_id, case_id)
+        if not case or not case['enabled']:
+            return await interaction.followup.send(
+                embed=discord.Embed(color=Colors.ERROR, description="❌ Кейс не найден."), ephemeral=True)
+
+        user = await self.db.get_or_create_user(guild_id, user_id)
+        if user.get('balance', 0) < case['price']:
+            return await interaction.followup.send(
+                embed=discord.Embed(color=Colors.ERROR,
+                                    description=f"❌ Недостаточно монеток. Нужно **{case['price']}**, у вас **{user.get('balance', 0)}**."),
+                ephemeral=True)
+
+        item = await self._roll_case_item(guild_id, case_id)
+        await self.db.update_user_balance(guild_id, user_id, -case['price'])
+        await self.db.conn.execute(
+            "UPDATE users SET cases_opened = COALESCE(cases_opened, 0) + 1 WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id))
+        await self.db.conn.commit()
+
+        cursor = await self.db.conn.execute(
+            "SELECT COALESCE(cases_opened, 0) AS opened FROM users WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id))
+        opened_row = await cursor.fetchone()
+        opened = opened_row["opened"] if opened_row else 0
+        try:
+            from cogs.achievements import award_achievement
+            await award_achievement(self.db, guild_id, user_id, "case_open_1", interaction.user)
+            if opened >= 10:
+                await award_achievement(self.db, guild_id, user_id, "case_open_10", interaction.user)
+        except Exception:
+            pass
+
+        if not item:
+            await self.db.update_user_balance(guild_id, user_id, case['price'] // 2)
+            embed = discord.Embed(
+                title=f"{case['emoji']} {case['name']}",
+                description=f"🫙 В кейсе пока пусто. Вернули **{case['price'] // 2}** монеток.",
+                color=Colors.MAIN,
+            )
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        reward_desc = ""
+        embed_color = Colors.MAIN
+        embed_thumb = interaction.user.display_avatar.url
+
+        if item['item_type'] == "coins":
+            amount = int(item['item_value'])
+            await self.db.update_user_balance(guild_id, user_id, amount)
+            reward_desc = f"🪙 **{amount}** монеток зачислено на баланс!"
+        elif item['item_type'] == "role":
+            role = interaction.guild.get_role(int(item['item_value']))
+            if not role or role >= interaction.guild.me.top_role:
+                await self.db.update_user_balance(guild_id, user_id, case['price'] // 2)
+                reward_desc = f"⚠️ Роль недоступна. Возврат **{case['price'] // 2}** монеток."
+            else:
+                await interaction.user.add_roles(role, reason=f"Кейс {case['name']}")
+                reward_desc = f"🎭 Выдана роль {role.mention}!"
+        elif item['item_type'] == "card":
+            card = await self.db.get_card(guild_id, item['item_value'])
+            if not card:
+                await self.db.update_user_balance(guild_id, user_id, case['price'] // 2)
+                reward_desc = f"⚠️ Карточка недоступна. Возврат **{case['price'] // 2}** монеток."
+            else:
+                from datetime import datetime, timezone
+                await self.db.conn.execute(
+                    "INSERT INTO user_cards (guild_id, user_id, card_id, quantity, obtained_at) "
+                    "VALUES (?, ?, ?, 1, ?) "
+                    "ON CONFLICT(guild_id, user_id, card_id) DO UPDATE SET quantity = quantity + 1",
+                    (guild_id, user_id, card['card_id'], datetime.now(timezone.utc).isoformat()))
+                await self.db.conn.commit()
+                reward_desc = f"🃏 Карточка **{card['name']}** ({card['emoji']}) добавлена в коллекцию!"
+                embed_color = 0x2b2d31
+
+        embed = discord.Embed(
+            title=f"{case['emoji']} {case['name']}",
+            description=f"С вас списано **{case['price']}** монеток.\n{reward_desc}",
+            color=embed_color,
+        )
+        embed.set_thumbnail(url=embed_thumb)
+        embed.set_footer(text=f"Открыл {interaction.user.display_name}")
+        await interaction.followup.send(embed=embed)
+
     @app_commands.command(name="shop", description="Открыть магазин")
     async def shop(self, interaction: discord.Interaction):
         if not interaction.guild:
@@ -119,18 +268,19 @@ class Shop(commands.Cog):
 
         guild_id = str(interaction.guild.id)
         items = await self.db.get_shop_items(guild_id)
+        cases = await self._get_cases(guild_id)
 
-        if not items:
+        if not items and not cases:
             embed = discord.Embed(
                 title="Магазин",
-                description="Магазин пуст. Администраторы могут добавить товары через `/setup`.",
+                description="Магазин пуст. Администраторы могут добавить товары и кейсы через `/setup`.",
                 color=Colors.MAIN,
             )
             return await interaction.followup.send(embed=embed)
 
         view = ShopView(self, guild_id, interaction.user.id)
-        view.update_buttons(items)
-        embed = self.build_shop_embed(items)
+        view.update_buttons(items, cases)
+        embed = self.build_shop_embed(items, cases)
         await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="buy", description="Купить товар по ID")

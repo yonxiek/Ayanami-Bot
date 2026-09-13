@@ -727,6 +727,22 @@ class Database:
         await self.conn.execute('DELETE FROM game_scores WHERE guild_id = ?', (guild_id,))
         await self.conn.commit()
 
+    async def clear_member_stats(self, guild_id: str, user_id: str):
+        """Сбрасывает статистику и активность одного участника (без баланса и покупок)."""
+        await self.conn.execute(
+            'UPDATE users SET total_messages = 0, total_voice_minutes = 0, total_commands = 0, '
+            'reputation = 0, exp = 0, level = 1, raids_attended = 0 WHERE guild_id = ? AND user_id = ?',
+            (guild_id, user_id)
+        )
+        await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM user_quests WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM achievements WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM duel_stats WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM game_scores WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.commit()
+
     async def clear_all_data(self, guild_id: str):
         guild_tables = [
             'users', 'mod_stats', 'warns', 'temporary_bans', 'mod_notes', 'strikes', 'level_roles',

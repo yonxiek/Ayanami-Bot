@@ -190,6 +190,42 @@ class Moderation(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
+    @app_commands.command(name="cleardata", description="Очистить статистику и активность участника")
+    @app_commands.describe(member="Участник, чьи данные нужно очистить")
+    @app_commands.default_permissions(moderate_members=True)
+    async def cleardata(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+
+        if member.bot:
+            return await interaction.followup.send("❌ Нельзя очищать данные у ботов.", ephemeral=True)
+        if member.top_role >= interaction.user.top_role and member.id != interaction.user.id:
+            return await interaction.followup.send("❌ Нельзя очищать данные участников с ролью выше или равной вашей.", ephemeral=True)
+
+        await self.db.clear_member_stats(str(interaction.guild.id), str(member.id))
+        await self.db.increment_mod_stat(str(interaction.guild.id), str(interaction.user.id), "cleardata", 1)
+
+        embed = discord.Embed(color=discord.Color(0x2ecc71))
+        embed.set_author(name="Очистка данных")
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        if interaction.guild.banner:
+            embed.set_image(url=interaction.guild.banner.url)
+        mod_line = f"{interaction.user.mention} {interaction.user.name} {interaction.user.id}"
+        user_line = f"{member.mention} {member.name} {member.id}"
+        embed.add_field(name="Модератор", value=mod_line, inline=False)
+        embed.add_field(name="Участник", value=user_line, inline=False)
+        embed.add_field(
+            name="Причина",
+            value="Сброшены сообщения, войс, команды, XP, уровни, репутация, серии, "
+                  "квесты и достижения (баланс и покупки сохранены)",
+            inline=False,
+        )
+        embed.set_footer(text="Ayanami System", icon_url=self.bot.user.display_avatar.url)
+
+        await interaction.followup.send(embed=embed)
+        self.bot.dispatch("moderation_log", "clear_member", interaction.guild, member, interaction.user,
+                          reason="Сброс статистики и активности участника")
+
     @app_commands.command(name="modstats", description="Статистика модератора")
     @app_commands.describe(moderator="Модератор, чью статистику показать")
     async def modstats(self, interaction: discord.Interaction, moderator: discord.Member = None):
@@ -202,6 +238,7 @@ class Moderation(commands.Cog):
             "kick": "Кики", "ban": "Баны", "tempban": "Временные баны", "unban": "Разбаны",
             "blacklist": "ЧС", "unblacklist": "Снятие ЧС",
             "strike": "Страйки", "unstrike": "Снятие страйков",
+            "cleardata": "Очистка данных",
             "report_resolved": "Закрытые жалобы"
         }
 
@@ -1242,6 +1279,12 @@ class Moderation(commands.Cog):
     async def modstats_prefix(self, ctx, moderator: discord.Member = None):
         from prefix_adapter import InteractionAdapter
         await self.modstats.callback(self, InteractionAdapter(ctx), moderator)
+
+    @commands.command(name="cleardata")
+    @commands.has_permissions(moderate_members=True)
+    async def cleardata_prefix(self, ctx, member: MemberSearch):
+        from prefix_adapter import InteractionAdapter
+        await self.cleardata.callback(self, InteractionAdapter(ctx), member)
 
     @commands.command(name="modstatsset")
     @commands.has_permissions(administrator=True)

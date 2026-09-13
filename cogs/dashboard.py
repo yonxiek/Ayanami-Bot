@@ -3744,8 +3744,8 @@ class SetupCasesView(discord.ui.View):
             "• «Удалить кейс» — удаление вместе с предметами",
             "",
             "**Для игроков:**",
-            "• `/caselist` — список кейсов",
-            "• `/caseopen <ID>` — открыть кейс за монетки",
+            "• `/shop` — кейсы показаны в магазине",
+            "• Выберите кейс в меню ниже списка товаров, чтобы открыть его",
         ]
         embed = discord.Embed(title="🎁 Кейсы — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
