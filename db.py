@@ -371,6 +371,15 @@ class Database:
             '''CREATE TABLE IF NOT EXISTS lottery_tickets (
                 guild_id TEXT, user_id TEXT, tickets INTEGER DEFAULT 0,
                 PRIMARY KEY (guild_id, user_id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS user_tasks (
+                task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                title TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TEXT,
+                completed_at TEXT
             )'''
         ]
         
@@ -1561,6 +1570,57 @@ class Database:
         cursor = await self.conn.execute(
             'SELECT user_id, tickets FROM lottery_tickets WHERE guild_id = ?',
             (guild_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    # ==========================================
+    #     ЛИЧНЫЕ ЗАДАЧИ
+    # ==========================================
+
+    async def add_user_task(self, guild_id: str, user_id: str, title: str) -> int:
+        cursor = await self.conn.execute(
+            'INSERT INTO user_tasks (guild_id, user_id, title, status, created_at) '
+            'VALUES (?, ?, ?, ?, ?)',
+            (guild_id, user_id, title, 'open', datetime.now(timezone.utc).isoformat())
+        )
+        await self.conn.commit()
+        return cursor.lastrowid
+
+    async def get_user_tasks(self, guild_id: str, user_id: str) -> list:
+        cursor = await self.conn.execute(
+            'SELECT task_id, title, status, created_at, completed_at FROM user_tasks '
+            'WHERE guild_id = ? AND user_id = ? '
+            "ORDER BY (CASE WHEN status = 'open' THEN 0 ELSE 1 END), created_at",
+            (guild_id, user_id)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def complete_user_task(self, guild_id: str, user_id: str, task_id: int) -> bool:
+        cursor = await self.conn.execute(
+            "UPDATE user_tasks SET status = 'done', completed_at = ? "
+            "WHERE guild_id = ? AND user_id = ? AND task_id = ? AND status = 'open'",
+            (datetime.now(timezone.utc).isoformat(), guild_id, user_id, task_id)
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def delete_user_task(self, guild_id: str, user_id: str, task_id: int) -> bool:
+        cursor = await self.conn.execute(
+            'DELETE FROM user_tasks WHERE guild_id = ? AND user_id = ? AND task_id = ?',
+            (guild_id, user_id, task_id)
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    # ==========================================
+    #     РОЛИ ЗА ГОЛОСОВУЮ АКТИВНОСТЬ
+    # ==========================================
+
+    async def get_users_by_voice_minutes(self, guild_id: str, min_minutes: int) -> list:
+        cursor = await self.conn.execute(
+            'SELECT user_id, total_voice_minutes FROM users '
+            'WHERE guild_id = ? AND total_voice_minutes >= ?',
+            (guild_id, min_minutes)
         )
         return [dict(row) for row in await cursor.fetchall()]
 

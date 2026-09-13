@@ -184,6 +184,12 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             "commands": [data.get(k)['commands'] if data.get(k) else 0 for k in keys],
         }
 
+        cursor = await self.db.conn.execute(
+            "SELECT total_messages, total_voice_minutes, total_commands, reputation FROM users "
+            "WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id))
+        urow = await cursor.fetchone()
+
         img = render_activity_chart(keys, series, target.display_name)
         buf = io.BytesIO()
         img.save(buf, "PNG")
@@ -192,6 +198,15 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
         embed = discord.Embed(title=f"📊 Активность: {target.display_name}", color=Colors.MAIN)
         if interaction.guild.icon:
             embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.add_field(name="💬 Сообщений (8 нед.)", value=str(sum(series["messages"])), inline=True)
+        total_voice = sum(series["voice_minutes"])
+        embed.add_field(name="🎙 Голос (8 нед.)", value=f"{total_voice} мин" if total_voice < 60 else f"≈{total_voice // 60} ч {total_voice % 60} мин", inline=True)
+        embed.add_field(name="⌨️ Команд (8 нед.)", value=str(sum(series["commands"])), inline=True)
+        if urow:
+            embed.add_field(name="🏅 Сообщений всего", value=str(urow["total_messages"]), inline=True)
+            tm = urow["total_voice_minutes"]
+            embed.add_field(name="⏱ В голосе всего", value=f"{tm // 60} ч {tm % 60} мин", inline=True)
+            embed.add_field(name="⭐ Репутация", value=str(urow["reputation"]), inline=True)
         embed.set_image(url="attachment://stats.png")
         embed.set_footer(text=f"ID: {target.id}")
         if member:

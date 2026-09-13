@@ -102,6 +102,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
             discord.SelectOption(label="Дни рождения", value="birthdays", emoji="🎂", description="Канал поздравлений и роль на праздник"),
             discord.SelectOption(label="Лотерея", value="lottery", emoji="🎟", description="Запуск и управление лотереей"),
+            discord.SelectOption(label="Интеграции", value="integrations", emoji="🔌", description="API-ключи: погода и статусы провайдеров ИИ"),
         ]
         extra_options = [
             discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
@@ -148,6 +149,7 @@ class DashboardView(discord.ui.LayoutView):
             "github": lambda: SetupGithubView(self.cog, db, self.guild_id),
             "birthdays": lambda: SetupBirthdaysView(self.cog, db, self.guild_id),
             "lottery": lambda: SetupLotteryView(self.cog, db, self.guild_id),
+            "integrations": lambda: SetupIntegrationsView(self.cog, db, self.guild_id),
             "webhooks": lambda: SetupWebhookView(self.cog, db, self.guild_id),
             "data": lambda: SetupDataView(self.cog, db, self.guild_id),
         }
@@ -2793,13 +2795,15 @@ class ShopItemAddModal(discord.ui.Modal):
         self.name_input = discord.ui.TextInput(label="Название", placeholder="Например: VIP роль", required=True, max_length=100)
         self.desc_input = discord.ui.TextInput(label="Описание", placeholder="Например: VIP привилегии на 30 дней", required=True, max_length=200)
         self.price_input = discord.ui.TextInput(label="Цена (монетки)", placeholder="Например: 5000", required=True, max_length=10)
-        self.type_input = discord.ui.TextInput(label="Тип товара", placeholder="role, temp_role, title, box, color, lootbox, xp_boost, nickname_token", required=True, max_length=30)
+        self.type_input = discord.ui.TextInput(label="Тип товара", placeholder="role, temp_role, title, box, color, lootbox, xp_boost, nickname_token, guild_xp_boost", required=True, max_length=30)
+        self.metadata_input = discord.ui.TextInput(label="Metadata (JSON, опционально)", style=discord.TextStyle.paragraph, placeholder='Например: {"multiplier": 1.5, "hours": 2}', required=False, max_length=300)
 
         self.add_item(self.item_id_input)
         self.add_item(self.name_input)
         self.add_item(self.desc_input)
         self.add_item(self.type_input)
         self.add_item(self.price_input)
+        self.add_item(self.metadata_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -2809,11 +2813,20 @@ class ShopItemAddModal(discord.ui.Modal):
             return await interaction.followup.send("❌ Цена должна быть числом!", ephemeral=True)
 
         item_type = self.type_input.value.strip()
-        valid_types = ["role", "temp_role", "title", "box", "color", "lootbox", "xp_boost", "nickname_token"]
+        valid_types = ["role", "temp_role", "title", "box", "color", "lootbox", "xp_boost", "nickname_token", "guild_xp_boost"]
         if item_type not in valid_types:
             return await interaction.followup.send(f"❌ Тип: {', '.join(valid_types)}", ephemeral=True)
 
         metadata = {}
+        raw_meta = self.metadata_input.value.strip()
+        if raw_meta:
+            try:
+                import json
+                metadata = json.loads(raw_meta)
+                if not isinstance(metadata, dict):
+                    metadata = {}
+            except ValueError:
+                return await interaction.followup.send("❌ Metadata должен быть валидным JSON объектом.", ephemeral=True)
 
         await self.db.create_shop_item(
             str(self.guild_id), self.item_id_input.value.strip(),
@@ -2859,8 +2872,9 @@ class SetupShopView(discord.ui.View):
             "",
             "**Типы товаров:**",
             "`role` — вечная роль | `temp_role` — временная роль (минуты в metadata)",
-            "`title` — титул | `lootbox` — лутбокс | `xp_boost` — XP-буст",
+            "`title` — титул | `lootbox` — лутбокс | `xp_boost` — личный XP-буст",
             "`nickname_token` — токен смены ника | `color` — цвет ника",
+            "`guild_xp_boost` — буст XP **для всего сервера** (metadata: `{\"multiplier\": 1.5, \"hours\": 2}`)",
             "",
             "*Магазин доступен через `/shop`. Покупки автоматические.*",
         ]
@@ -3045,6 +3059,50 @@ class LevelRoleAddModal(discord.ui.Modal):
         await interaction.followup.send(f"✅ За уровень **{level}** будет выдаваться роль <@&{role_id}>", ephemeral=True)
 
 
+class VoiceRoleAddModal(discord.ui.Modal):
+    def __init__(self, db: Database, guild_id: int):
+        super().__init__(title="Роль за голосовую активность")
+        self.db = db
+        self.guild_id = guild_id
+
+        self.minutes_input = discord.ui.TextInput(
+            label="Минут в голосе (порог)", placeholder="Например: 3600", required=True, max_length=10
+        )
+        self.role_id_input = discord.ui.TextInput(
+            label="ID роли", placeholder="Например: 1234567890", required=True, max_length=20
+        )
+        self.add_item(self.minutes_input)
+        self.add_item(self.role_id_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            minutes = int(self.minutes_input.value)
+        except ValueError:
+            return await interaction.followup.send("❌ Минуты должны быть числом!", ephemeral=True)
+        if minutes < 1:
+            return await interaction.followup.send("❌ Порог должен быть ≥ 1 минуты.", ephemeral=True)
+        role_id = self.role_id_input.value.strip()
+        if not role_id.isdigit():
+            return await interaction.followup.send("❌ ID роли должен быть числом!", ephemeral=True)
+        role = interaction.guild.get_role(int(role_id))
+        if not role:
+            return await interaction.followup.send("❌ Роль не найдена.", ephemeral=True)
+
+        config = await self.db.get_guild_config(str(self.guild_id))
+        voice_roles = config.get('voice_roles', [])
+        voice_roles = [vr for vr in voice_roles if int(vr.get('minutes', 0)) != minutes]
+        voice_roles.append({"minutes": minutes, "role_id": role_id})
+        await self.db.update_config_field(str(self.guild_id), 'voice_roles', voice_roles)
+        await log_settings_change(
+            interaction, "Уровни",
+            f"**Роль за голос:** {minutes} мин → {role.mention}"
+        )
+        await interaction.followup.send(
+            f"✅ Роль {role.mention} будет выдаваться при **{minutes}** мин в голосе.", ephemeral=True
+        )
+
+
 class LevelConfigModal(discord.ui.Modal):
     def __init__(self, db: Database, guild_id: int):
         super().__init__(title="Настройки XP")
@@ -3147,6 +3205,17 @@ class SetupLevelsView(discord.ui.View):
             lines.append(roles_text)
         else:
             lines.append("  Не заданы")
+
+        voice_roles = config.get('voice_roles', [])
+        if voice_roles:
+            vr_lines = []
+            for vr in sorted(voice_roles, key=lambda x: int(x.get('minutes', 0))):
+                r = interaction.guild.get_role(int(vr['role_id'])) if str(vr['role_id']).isdigit() else None
+                target = r.mention if r else f"`{vr['role_id']}`"
+                vr_lines.append(f"  🎙 `{vr['minutes']}` мин → {target}")
+            lines.append("**Роли за голос:**")
+            lines.extend(vr_lines[:5])
+
         lines.append("\n*Используйте кнопки ниже для настройки XP и ролей.*")
 
         embed = discord.Embed(title="📊 Уровни — настройки", description="\n".join(lines), color=Colors.MAIN)
@@ -3240,6 +3309,31 @@ class SetupLevelsView(discord.ui.View):
             desc += f"{medal} **{name}** — Ур. `{entry['level']}` (`{entry['exp']}` XP)\n"
         embed = discord.Embed(title="🏆 Топ-10 по уровню", description=desc, color=discord.Color(0xf1c40f))
         embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="➕ Роль за голос (мин)", emoji="🎙️", style=discord.ButtonStyle.blurple, row=4)
+    async def btn_add_voice_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(VoiceRoleAddModal(self.db, self.guild_id))
+
+    @discord.ui.button(label="Роли за голос", emoji="📋", style=discord.ButtonStyle.grey, row=4)
+    async def btn_list_voice_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        voice_roles = config.get('voice_roles', [])
+        if not voice_roles:
+            return await interaction.response.send_message(
+                "Ролей за голосовую активность пока нет. Добавьте через **➕ Роль за голос (мин)**.", ephemeral=True
+            )
+        lines = []
+        for vr in sorted(voice_roles, key=lambda x: int(x.get('minutes', 0))):
+            role = interaction.guild.get_role(int(vr['role_id'])) if str(vr['role_id']).isdigit() else None
+            role_name = role.mention if role else f"ID: {vr['role_id']}"
+            lines.append(f"> 🎙 `{vr['minutes']}` мин → {role_name}\n")
+        embed = discord.Embed(
+            title="Роли за голосовую активность",
+            description="".join(lines),
+            color=Colors.MAIN,
+        )
+        embed.set_footer(text="Выдаются автоматически по общему времени в голосе")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -4185,6 +4279,60 @@ class LotteryStartModal(discord.ui.Modal, title="🚀 Запустить лот�
         if not cog:
             return await interaction.response.send_message("❌ Модуль «Лотерея» выключен.", ephemeral=True)
         await cog.lottery_start(interaction, self.price.value, self.duration.value)
+
+
+class SetupIntegrationsView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Ключ OpenWeather", emoji="🌦", style=discord.ButtonStyle.blurple, row=0)
+    async def btn_weather_key(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WeatherKeyModal())
+
+    @discord.ui.button(label="Статус интеграций", emoji="📋", style=discord.ButtonStyle.grey, row=0)
+    async def btn_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        weather_key = config.get("weather_api_key")
+        k = lambda val: "✅ задан" if val else "— не задан"
+        lines = [
+            "### Интеграции",
+            "",
+            f"🌦 **OpenWeather (погода):** {k(weather_key)}",
+            "",
+            "**Провайдеры ИИ (глобальные, из .env):**",
+            f"🎭 **Gemini:** {k(True) if self._env('GEMINI_API_KEY') else '— не задан'}",
+            f"🟠 **OpenAI:** {k(True) if self._env('OPENAI_API_KEY') else '— не задан'}",
+            f"🔵 **DeepSeek:** {k(True) if self._env('DEEPSEEK_API_KEY') else '— не задан'}",
+            "",
+            "Использование погоды: `/weather <город>`",
+        ]
+        embed = discord.Embed(title="🔌 Интеграции", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ключи ИИ задаются в .env на сервере бота")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @staticmethod
+    def _env(name: str) -> bool:
+        import os
+        return bool(os.getenv(name, "").strip())
+
+
+class WeatherKeyModal(discord.ui.Modal, title="🌦 Ключ OpenWeatherMap"):
+    key = discord.ui.TextInput(
+        label="API-ключ (openweathermap.org)", placeholder="ваш_ключ", required=True, max_length=80
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        key = self.key.value.strip()
+        if not key:
+            return await interaction.followup.send("❌ Ключ не может быть пустым.", ephemeral=True)
+        await Database().update_config_field(str(interaction.guild.id), "weather_api_key", key)
+        await log_settings_change(interaction, "Интеграции", "**Задан ключ OpenWeatherMap**")
+        await interaction.followup.send("✅ Ключ OpenWeather сохранён. Теперь работает `/weather <город>`.", ephemeral=True)
 
 
 async def _post_webhook(url: str, payload: dict) -> tuple[int, str]:

@@ -17,6 +17,7 @@ COLORS = {
     "GitHub": 0x5865f2,
     "Напоминания": 0xf1c40f,
     "Дни рождения": 0xf06292,
+    "Задачи": 0x1abc9c,
 }
 
 
@@ -402,6 +403,46 @@ class BirthdaySetModal(discord.ui.Modal, title="🎂 День рождения")
         await cog.set_bday(interaction, день, месяц)
 
 
+class TaskAddModal(discord.ui.Modal, title="➕ Новая задача"):
+    title = discord.ui.TextInput(
+        label="Что нужно сделать", placeholder="Купить подарок", max_length=120
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Tasks")
+        if not cog:
+            return await interaction.response.send_message(
+                "❌ Модуль недоступен.", ephemeral=True
+            )
+        await cog.task_create(interaction, self.title.value)
+
+
+class TaskIdModal(discord.ui.Modal, title="📋 ID задачи"):
+    task_id = discord.ui.TextInput(
+        label="ID задачи (из «Мои задачи»)", placeholder="1", max_length=10
+    )
+
+    def __init__(self, action: str):
+        super().__init__()
+        self.action = action
+        self.title = "✅ Завершить задачу" if action == "complete" else "🗑️ Удалить задачу"
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Tasks")
+        if not cog:
+            return await interaction.response.send_message(
+                "❌ Модуль недоступен.", ephemeral=True
+            )
+        try:
+            task_id = int(self.task_id.value)
+        except ValueError:
+            return await interaction.response.send_message("❌ ID должен быть числом.", ephemeral=True)
+        if self.action == "complete":
+            await cog.task_complete(interaction, task_id)
+        else:
+            await cog.task_delete(interaction, task_id)
+
+
 # ─────────────────────────────────────────────
 #  View-ы
 # ─────────────────────────────────────────────
@@ -440,6 +481,11 @@ class MenuView(discord.ui.View):
                 description="Дата и поздравления в праздник",
                 emoji="🎂",
             ),
+            discord.SelectOption(
+                label="Задачи",
+                description="Личные задачи и цели",
+                emoji="📋",
+            ),
         ],
     )
     async def select_callback(
@@ -454,6 +500,7 @@ class MenuView(discord.ui.View):
             "GitHub": "Смотрите последние коммиты, Pull Requests и Issues репозитория.",
             "Напоминания": "Создавайте личные напоминания и управляйте ими.",
             "Дни рождения": "Сохрани дату рождения — в праздник Ayanami поздравит и выдаст роль.",
+            "Задачи": "Веди личные задачи: создавай, отмечай выполненное и удаляй.",
         }[category]
         embed = discord.Embed(title=category, description=desc, color=COLORS[category])
         embed.set_footer(text="Выберите действие ниже")
@@ -496,6 +543,11 @@ class CategoryView(discord.ui.View):
             self._add_btn("Установить", "🎂", discord.ButtonStyle.success, self._bday_set)
             self._add_btn("Моя дата", "ℹ️", discord.ButtonStyle.secondary, self._bday_info)
             self._add_btn("Удалить", "❌", discord.ButtonStyle.danger, self._bday_remove)
+        elif category == "Задачи":
+            self._add_btn("Новая", "➕", discord.ButtonStyle.success, self._task_add)
+            self._add_btn("Мои задачи", "📋", discord.ButtonStyle.secondary, self._task_list)
+            self._add_btn("Завершить", "✅", discord.ButtonStyle.primary, self._task_complete)
+            self._add_btn("Удалить", "❌", discord.ButtonStyle.danger, self._task_delete)
 
         back = discord.ui.Button(
             label="Назад", emoji="◀️", style=discord.ButtonStyle.grey, row=4
@@ -676,6 +728,23 @@ class CategoryView(discord.ui.View):
         else:
             await self._not_found(interaction, "Birthdays")
 
+    # ── Tasks ──
+    async def _task_add(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TaskAddModal())
+
+    async def _task_list(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Tasks")
+        if cog:
+            await cog.task_list(interaction)
+        else:
+            await self._not_found(interaction, "Tasks")
+
+    async def _task_complete(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TaskIdModal("complete"))
+
+    async def _task_delete(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TaskIdModal("delete"))
+
 
 class Menu(commands.Cog):
     def __init__(self, bot):
@@ -684,7 +753,7 @@ class Menu(commands.Cog):
 
     @app_commands.command(
         name="menu",
-        description="Меню функций — голосования, события, карточки, кланы, GitHub, напоминания, дни рождения",
+        description="Меню функций — голосования, события, карточки, кланы, GitHub, напоминания, дни рождения, задачи",
     )
     async def menu(self, interaction: discord.Interaction):
         embed = discord.Embed(

@@ -76,6 +76,43 @@ class Summarize(commands.Cog):
         from prefix_adapter import InteractionAdapter
         await self.summarize_cmd.callback(self, InteractionAdapter(ctx), сообщений)
 
+    @app_commands.command(name="translate", description="Перевод текста на нужный язык (ИИ)")
+    @app_commands.describe(текст="Текст для перевода", язык="На какой язык (например: английский, японский)")
+    async def translate_cmd(self, interaction: discord.Interaction, текст: str, язык: str = "английский"):
+        await interaction.response.defer()
+
+        system_prompt = (
+            "Ты — точный переводчик. Отвечай ТОЛЬКО переводом, без пояснений, "
+            "кавычек и лишнего текста."
+        )
+        translated = await complete(
+            system_prompt,
+            [{"role": "user", "content": f"Переведи на язык: {язык}.\nТекст:\n{текст}"}],
+            temperature=0.2,
+            max_tokens=800,
+            timeout=40,
+        )
+
+        if not translated:
+            return await interaction.followup.send(
+                "❌ Не удалось получить перевод от ИИ (ключ не настроен или ошибка API).",
+                ephemeral=True,
+            )
+
+        embed = discord.Embed(
+            title=f"🌐 Перевод: {язык}",
+            description=translated[:4096],
+            color=Colors.MAIN,
+        )
+        embed.add_field(name="Оригинал", value=текст[:1024], inline=False)
+        embed.set_footer(text=f"Перевёл {interaction.user.display_name}")
+        await interaction.followup.send(embed=embed)
+
+    @commands.command(name="translate")
+    async def translate_prefix(self, ctx, *, текст: str):
+        from prefix_adapter import InteractionAdapter
+        await self.translate_cmd.callback(self, InteractionAdapter(ctx), текст)
+
 
 async def setup(bot):
     await bot.add_cog(Summarize(bot))

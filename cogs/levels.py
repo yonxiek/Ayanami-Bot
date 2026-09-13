@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 import discord
@@ -14,6 +15,16 @@ class Levels(commands.Cog):
         self.db = Database()
         self.xp_cooldowns = {}
 
+    async def cog_load(self):
+        try:
+            self.bg_task = self.bot.loop.create_task(self._voice_roles_loop())
+        except (RuntimeError, AttributeError):
+            pass
+
+    async def cog_unload(self):
+        if hasattr(self, "bg_task"):
+            self.bg_task.cancel()
+
     def get_config(self, guild_id: str, config: dict) -> dict:
         return {
             'xp_per_message': config.get('xp_per_message', 15),
@@ -25,7 +36,40 @@ class Levels(commands.Cog):
             'level_up_enabled': config.get('level_up_enabled', True),
             'xp_enabled': config.get('xp_enabled', True),
             'role_rewards_enabled': config.get('role_rewards_enabled', True),
+            'voice_roles': config.get('voice_roles', []),
         }
+
+    async def _voice_roles_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                await self._check_voice_roles()
+            except Exception as e:
+                print(f"Ошибка ролей за голосовую активность: {e}")
+            await asyncio.sleep(120)
+
+    async def _check_voice_roles(self):
+        """Выдаёт роли тем, кто набрал нужно число минут в голосовом канале."""
+        for guild in self.bot.guilds:
+            config = await self.db.get_guild_config(str(guild.id))
+            voice_roles = config.get('voice_roles', [])
+            if not voice_roles:
+                continue
+            for entry in sorted(voice_roles, key=lambda x: int(x.get('minutes', 0))):
+                minutes = int(entry.get('minutes', 0))
+                role_id = str(entry.get('role_id', ''))
+                role = guild.get_role(int(role_id)) if role_id.lstrip('-').isdigit() else None
+                if not role:
+                    continue
+                rows = await self.db.get_users_by_voice_minutes(str(guild.id), minutes)
+                for row in rows:
+                    member = guild.get_member(int(row['user_id']))
+                    if not member or member.bot or role in member.roles:
+                        continue
+                    try:
+                        await member.add_roles(role, reason=f"Активность: {minutes}+ минут в голосе")
+                    except discord.Forbidden:
+                        pass
 
     def calc_level(self, xp: int) -> int:
         return int((xp / 100) ** 0.5) + 1
@@ -70,6 +114,15 @@ class Levels(commands.Cog):
         boost = await self.db.get_xp_boost(guild_id, user_id)
         if boost:
             xp = int(xp * boost['multiplier'])
+
+        guild_boost = config.get('guild_xp_boost')
+        if guild_boost:
+            try:
+                expires = datetime.fromisoformat(guild_boost['expires_at'])
+                if expires > now:
+                    xp = int(xp * float(guild_boost.get('multiplier', 1.5)))
+            except Exception:
+                pass
 
         result = await self.db.add_xp(guild_id, user_id, xp)
         self.xp_cooldowns[f"{guild_id}:{user_id}"] = now

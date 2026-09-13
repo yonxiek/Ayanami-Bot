@@ -167,6 +167,7 @@ class Shop(commands.Cog):
                 "temp_role": "⏳",
                 "lootbox": "🎰",
                 "xp_boost": "⚡",
+                "guild_xp_boost": "🏛️",
                 "nickname_token": "✏️",
                 "card": "🃏",
             }.get(item['item_type'], "📦")
@@ -449,8 +450,29 @@ class Shop(commands.Cog):
         elif item['item_type'] == 'nickname_token':
             pass
 
-        elif item['item_type'] == 'nickname_token':
-            pass
+        elif item['item_type'] == 'guild_xp_boost':
+            import json
+            from datetime import datetime, timedelta, timezone
+            meta = json.loads(item.get('metadata', '{}'))
+            multiplier = meta.get('multiplier', 1.5)
+            hours = meta.get('hours', 2)
+            expires = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+            config = await self.db.get_guild_config(guild_id)
+            config['guild_xp_boost'] = {'multiplier': multiplier, 'expires_at': expires}
+            await self.db.update_guild_config(guild_id, **config)
+            embed = discord.Embed(
+                title="🏛️ Гильдейский буст XP!",
+                description=(
+                    f"**{item['name']}** активирован на весь сервер!\n"
+                    f"Множитель XP: **x{multiplier}** на **{hours} ч** для всех участников."
+                ),
+                color=Colors.SUCCESS,
+            )
+            embed.set_thumbnail(
+                url=interaction.guild.icon.url if interaction.guild.icon else interaction.user.display_avatar.url
+            )
+            embed.set_footer(text="Ayanami System")
+            return await interaction.followup.send(embed=embed)
 
         elif item['item_type'] == 'card':
             meta = item.get('metadata', {})
