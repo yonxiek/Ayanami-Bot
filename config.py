@@ -55,6 +55,11 @@ PREFIX: str = get("PREFIX", "!") or "!"
 #: Путь к файлу SQLite базы данных
 DB_URL: str = get("DB_URL", "data/bot.db") or "data/bot.db"
 
+#: Папка для авто-бэкапов SQLite-базы
+DB_BACKUP_DIR: str = get("DB_BACKUP_DIR", "data/backups") or "data/backups"
+#: Сколько последних бэкапов хранить
+DB_BACKUP_KEEP: int = get_int("DB_BACKUP_KEEP", 7)
+
 #: Вебхук для отправки ошибок (необязательный)
 ERROR_WEBHOOK_URL: str = get("ERROR_WEBHOOK_URL", "") or ""
 

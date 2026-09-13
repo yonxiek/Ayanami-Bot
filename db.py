@@ -1,5 +1,8 @@
+import asyncio
 import json
+import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import aiosqlite
 
@@ -1421,3 +1424,56 @@ class Database:
             (price * amount, guild_id, user_id))
         await self.conn.commit()
         return price * amount
+
+
+def _backup_sqlite(src_path: str, dst_path: str):
+    """Онлайн-копия SQLite-базы через sqlite3.Connection.backup().
+
+    Безопасна во время работы бота: SQLite сам синхронизирует состояние
+    (в том числе данные из WAL), не требуя остановки записи.
+    """
+    src = sqlite3.connect(src_path)
+    try:
+        dst = sqlite3.connect(dst_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+
+async def create_backup(
+    db_path: str | None = None,
+    backup_dir: str | None = None,
+    keep: int | None = None,
+) -> str | None:
+    """Создаёт резервную копию базы.
+
+    Для SQLite — онлайн-копия файла в ``backup_dir`` (имя ``bot-<дата>_<время>.db``)
+    с удалением старых копий сверх ``keep``. Для Postgres-подключений ничего
+    не делает и возвращает ``None``. Возвращает путь к созданной копии.
+    """
+    db_path = db_path or config.DB_URL
+    if db_path.startswith(("postgres://", "postgresql://")):
+        return None
+
+    backup_dir = backup_dir or config.DB_BACKUP_DIR
+    keep = config.DB_BACKUP_KEEP if keep is None else keep
+
+    dir_path = Path(backup_dir)
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    dst = dir_path / f"bot-{ts}.db"
+    await asyncio.to_thread(_backup_sqlite, db_path, str(dst))
+
+    if keep is not None and keep >= 0:
+        backups = sorted(dir_path.glob("bot-*.db"))
+        for old in backups[:-keep] if keep else backups:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+    return str(dst)

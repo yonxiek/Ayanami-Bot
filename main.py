@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -8,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands
 
-from db import Database
+from db import Database, create_backup
 
 logging.getLogger('discord.app_commands').setLevel(logging.CRITICAL)
 
@@ -94,6 +95,7 @@ async def on_ready():
         traceback.print_exc()
         await bot.close()
         return
+    _backup_task = bot.loop.create_task(backup_loop())
     await load_cogs()
     try:
         synced = await bot.tree.sync()
@@ -117,6 +119,19 @@ async def load_cogs():
                 traceback.print_exc()
                 cogs_failed += 1
     print(f"Итого: {cogs_loaded} когов загружено, {cogs_failed} ошибок")
+
+
+async def backup_loop():
+    """Автоматические резервные копии базы: сразу при старте и далее раз в сутки."""
+    while True:
+        try:
+            path = await create_backup()
+            if path:
+                print(f"💾 Бэкап базы создан: {path}")
+        except Exception as e:
+            print(f"Ошибка создания бэкапа базы: {e}")
+            traceback.print_exc()
+        await asyncio.sleep(86400)
 
 
 async def check_modules_slash(interaction: discord.Interaction) -> bool:
