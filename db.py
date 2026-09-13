@@ -3,14 +3,16 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
+import config
+
 
 class Database:
     _instance = None
 
-    def __new__(cls, db_path="data/bot.db"):
+    def __new__(cls, db_path=None):
         if not cls._instance:
             cls._instance = super().__new__(cls)
-            cls._instance.db_path = db_path
+            cls._instance.db_path = db_path or config.DB_URL
             cls._instance.conn = None
         return cls._instance
 

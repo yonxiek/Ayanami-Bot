@@ -15,6 +15,9 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Загружаем переменные окружения из .env рядом с проектом
 load_dotenv(BASE_DIR / ".env")
+# Локальные переопределения (например, тестовая база на ПК) — не попадают в git.
+# Файл должен лежать рядом с .env и имеет приоритет над ним.
+load_dotenv(BASE_DIR / ".env.local", override=True)
 
 
 def get(name: str, default: str | None = None) -> str | None:
