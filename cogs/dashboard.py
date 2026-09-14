@@ -1,6 +1,5 @@
 import json as _json
 import io
-import re
 from datetime import datetime, timezone
 
 import aiohttp
@@ -10,10 +9,7 @@ from discord.ext import commands
 
 from db import Database
 from ui_components import AyanamiUI, Colors
-
-
-def _digits_only(text: str) -> str:
-    return re.sub(r"\D", "", text or "")
+from cogs.channel_counters import TYPES as COUNTER_TYPES
 
 
 async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
@@ -2662,79 +2658,85 @@ class SetupDataView(discord.ui.View):
         await interaction.response.send_modal(DataImportModal())
 
 
-class CounterAddModal(discord.ui.Modal, title="📊 Добавить счётчик"):
-    channel = discord.ui.TextInput(label="ID голосового канала", required=True, max_length=40)
-    counter_type = discord.ui.TextInput(
-        label="Тип счётчика", required=True, max_length=30,
-        placeholder="members, users, bots, online, voice, boost, boostlvl, channels, roles, emoji, stickers",
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        cog = interaction.client.get_cog("ChannelCounters")
-        if not cog:
-            return await interaction.response.send_message("❌ Модуль счётчиков недоступен.", ephemeral=True)
-        digits = _digits_only(self.channel.value)
-        if not digits:
-            return await interaction.response.send_message("❌ Укажите ID голосового канала.", ephemeral=True)
-        channel = interaction.guild.get_channel(int(digits))
-        if not isinstance(channel, discord.VoiceChannel):
-            return await interaction.response.send_message("❌ Канал не найден или не является голосовым.", ephemeral=True)
-        ctype = self.counter_type.value.strip().lower()
-        if ctype not in cog.TYPES:
-            help_types = ", ".join(f"`{k}`" for k in cog.TYPES)
-            return await interaction.response.send_message(f"❌ Тип должен быть одним из: {help_types}", ephemeral=True)
-        await cog._add_counter(interaction.guild, channel.id, ctype)
-        await log_settings_change(interaction, "Счётчики", f"**Действие:** добавлен счётчик\n**Канал:** {channel.mention}\n**Тип:** {cog.TYPES[ctype]}")
-        await interaction.response.send_message(
-            f"✅ В канале {channel.mention} теперь показывается **{cog.TYPES[ctype]}**.", ephemeral=True)
-
-
-class CounterRemoveModal(discord.ui.Modal, title="🗑️ Удалить счётчик"):
-    channel = discord.ui.TextInput(label="ID голосового канала (или его упоминание)", required=True, max_length=40)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        cog = interaction.client.get_cog("ChannelCounters")
-        if not cog:
-            return await interaction.response.send_message("❌ Модуль счётчиков недоступен.", ephemeral=True)
-        digits = _digits_only(self.channel.value)
-        if not digits:
-            return await interaction.response.send_message("❌ Укажите ID голосового канала.", ephemeral=True)
-        ok = await cog._remove_counter(interaction.guild, int(digits))
-        if not ok:
-            return await interaction.response.send_message("❌ В этом канале нет счётчика.", ephemeral=True)
-        await log_settings_change(interaction, "Счётчики", f"**Действие:** удалён счётчик\n**Канал ID:** {digits}")
-        await interaction.response.send_message("✅ Счётчик убран.", ephemeral=True)
-
-
 class SetupCountersView(discord.ui.View):
     def __init__(self, cog, db: Database, guild_id: int):
         super().__init__(timeout=300)
         self.cog = cog
         self.db = db
         self.guild_id = guild_id
+        self._pending_type = None
         self.add_item(BackButton())
 
-    @discord.ui.button(label="Добавить счётчик", emoji="➕", style=discord.ButtonStyle.success, row=1)
-    async def btn_add(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(CounterAddModal())
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.voice],
+        placeholder="🗑️ Убрать счётчик из канала...",
+        min_values=0, max_values=1, row=0,
+    )
+    async def select_remove(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        await interaction.response.defer(ephemeral=True)
+        cog = interaction.client.get_cog("ChannelCounters")
+        if not cog:
+            return await interaction.followup.send("❌ Модуль счётчиков недоступен.", ephemeral=True)
+        if not select.values:
+            return await interaction.followup.send("✅ Действие отменено.", ephemeral=True)
+        channel = select.values[0]
+        ok = await cog._remove_counter(interaction.guild, channel.id)
+        if not ok:
+            return await interaction.followup.send(f"❌ В {channel.mention} нет счётчика.", ephemeral=True)
+        await log_settings_change(interaction, "Счётчики", f"**Действие:** удалён счётчик\n**Канал:** {channel.mention}")
+        await interaction.followup.send(f"✅ Счётчик убран из {channel.mention}.", ephemeral=True)
 
-    @discord.ui.button(label="Список", emoji="📋", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.select(
+        cls=discord.ui.Select,
+        placeholder="Тип счётчика...",
+        options=[discord.SelectOption(label=COUNTER_TYPES[k], value=k) for k in COUNTER_TYPES],
+        row=1,
+    )
+    async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self._pending_type = select.values[0]
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(
+            f"✅ Тип: **{COUNTER_TYPES[self._pending_type]}**. Теперь выберите голосовой канал ниже.",
+            ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.voice],
+        placeholder="➕ Выбрать канал — добавить счётчик...",
+        min_values=1, max_values=1, row=2,
+    )
+    async def select_add(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        await interaction.response.defer(ephemeral=True)
+        cog = interaction.client.get_cog("ChannelCounters")
+        if not cog:
+            return await interaction.followup.send("❌ Модуль счётчиков недоступен.", ephemeral=True)
+        ctype = self._pending_type
+        channel = select.values[0]
+        if not ctype:
+            return await interaction.followup.send(
+                "❌ Сначала выберите тип счётчика (меню «Тип счётчика»).", ephemeral=True)
+        await cog._add_counter(interaction.guild, channel.id, ctype)
+        await log_settings_change(
+            interaction, "Счётчики",
+            f"**Действие:** добавлен счётчик\n**Канал:** {channel.mention}\n**Тип:** {COUNTER_TYPES[ctype]}"
+        )
+        await interaction.followup.send(
+            f"✅ В канале {channel.mention} теперь показывается **{COUNTER_TYPES[ctype]}**.", ephemeral=True)
+
+    @discord.ui.button(label="Список", emoji="📋", style=discord.ButtonStyle.secondary, row=4)
     async def btn_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog("ChannelCounters")
         if not cog:
             return await interaction.response.send_message("❌ Модуль счётчиков недоступен.", ephemeral=True)
         counters = await cog._list_counters(interaction.guild)
         if not counters:
-            return await interaction.response.send_message("📊 Счётчиков пока нет. Добавьте первый!", ephemeral=True)
+            return await interaction.response.send_message("📊 Счётчиков пока нет. Выберите канал и тип!", ephemeral=True)
         lines = [f"{name} — **{cog.TYPES.get(t, t)}**: {value}" for name, t, value, _ in counters]
         embed = discord.Embed(title="📊 Счётчики каналов", description="\n".join(lines), color=Colors.MAIN)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Удалить счётчик", emoji="🗑️", style=discord.ButtonStyle.danger, row=1)
-    async def btn_remove(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(CounterRemoveModal())
-
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=4)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
         counters = config.get("channel_counters", {}) or {}
@@ -2750,8 +2752,8 @@ class SetupCountersView(discord.ui.View):
             "• `boost` / `boostlvl` — бусты и уровень сервера\n"
             "• `channels` / `roles` / `emoji` / `stickers` — каналы, роли, эмодзи, стикеры",
             "",
-            "**Как добавить:** нажмите «Добавить счётчик», укажите ID голосового канала "
-            "и тип (например `members`).",
+            "**Как добавить:** выберите «Тип счётчика», затем «Канал для счётчика».",
+            "**Как убрать:** выберите канал в «Убрать счётчик».",
         ]
         embed = discord.Embed(title="📩 Настройки счётчиков", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
@@ -3160,16 +3162,38 @@ class SetupTitlesView(discord.ui.View):
 #   УРОВНИ
 # ==========================================
 
-class LevelRoleAddModal(discord.ui.Modal):
-    def __init__(self, db: Database, guild_id: int):
-        super().__init__(title="Добавить роль за уровень")
+class RolePickView(discord.ui.View):
+    """Шаг выбора роли: затем открывается модалка с числовым параметром."""
+
+    def __init__(self, db: Database, guild_id: int, purpose: str):
+        super().__init__(timeout=120)
         self.db = db
         self.guild_id = guild_id
+        self.purpose = purpose
 
-        self.level_input = discord.ui.TextInput(label="Уровень", placeholder="Например: 10", required=True, max_length=5)
-        self.role_id_input = discord.ui.TextInput(label="ID роли", placeholder="Например: 1234567890", required=True, max_length=20)
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="🎭 Выберите роль...",
+        min_values=1, max_values=1,
+    )
+    async def select_role(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        role = select.values[0]
+        if self.purpose == "level":
+            await interaction.response.send_modal(LevelSizeModal(self.db, self.guild_id, role))
+        else:
+            await interaction.response.send_modal(VoiceMinutesModal(self.db, self.guild_id, role))
+
+
+class LevelSizeModal(discord.ui.Modal):
+    def __init__(self, db: Database, guild_id: int, role: discord.Role):
+        super().__init__(title=f"Уровень для {role.name[:40]}")
+        self.db = db
+        self.guild_id = guild_id
+        self.role = role
+        self.level_input = discord.ui.TextInput(
+            label="Уровень", placeholder="Например: 10", required=True, max_length=5
+        )
         self.add_item(self.level_input)
-        self.add_item(self.role_id_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -3177,27 +3201,22 @@ class LevelRoleAddModal(discord.ui.Modal):
             level = int(self.level_input.value)
         except ValueError:
             return await interaction.followup.send("❌ Уровень должен быть числом!", ephemeral=True)
-        role_id = self.role_id_input.value.strip()
-        if not role_id.isdigit():
-            return await interaction.followup.send("❌ ID роли должен быть числом!", ephemeral=True)
-        await self.db.set_level_role(str(self.guild_id), level, role_id)
-        await interaction.followup.send(f"✅ За уровень **{level}** будет выдаваться роль <@&{role_id}>", ephemeral=True)
+        await self.db.set_level_role(str(self.guild_id), level, str(self.role.id))
+        await interaction.followup.send(
+            f"✅ За уровень **{level}** будет выдаваться {self.role.mention}", ephemeral=True
+        )
 
 
-class VoiceRoleAddModal(discord.ui.Modal):
-    def __init__(self, db: Database, guild_id: int):
-        super().__init__(title="Роль за голосовую активность")
+class VoiceMinutesModal(discord.ui.Modal):
+    def __init__(self, db: Database, guild_id: int, role: discord.Role):
+        super().__init__(title=f"Минут в голосе для {role.name[:30]}")
         self.db = db
         self.guild_id = guild_id
-
+        self.role = role
         self.minutes_input = discord.ui.TextInput(
             label="Минут в голосе (порог)", placeholder="Например: 3600", required=True, max_length=10
         )
-        self.role_id_input = discord.ui.TextInput(
-            label="ID роли", placeholder="Например: 1234567890", required=True, max_length=20
-        )
         self.add_item(self.minutes_input)
-        self.add_item(self.role_id_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -3207,24 +3226,17 @@ class VoiceRoleAddModal(discord.ui.Modal):
             return await interaction.followup.send("❌ Минуты должны быть числом!", ephemeral=True)
         if minutes < 1:
             return await interaction.followup.send("❌ Порог должен быть ≥ 1 минуты.", ephemeral=True)
-        role_id = self.role_id_input.value.strip()
-        if not role_id.isdigit():
-            return await interaction.followup.send("❌ ID роли должен быть числом!", ephemeral=True)
-        role = interaction.guild.get_role(int(role_id))
-        if not role:
-            return await interaction.followup.send("❌ Роль не найдена.", ephemeral=True)
-
         config = await self.db.get_guild_config(str(self.guild_id))
         voice_roles = config.get('voice_roles', [])
         voice_roles = [vr for vr in voice_roles if int(vr.get('minutes', 0)) != minutes]
-        voice_roles.append({"minutes": minutes, "role_id": role_id})
+        voice_roles.append({"minutes": minutes, "role_id": str(self.role.id)})
         await self.db.update_config_field(str(self.guild_id), 'voice_roles', voice_roles)
         await log_settings_change(
             interaction, "Уровни",
-            f"**Роль за голос:** {minutes} мин → {role.mention}"
+            f"**Роль за голос:** {minutes} мин → {self.role.mention}"
         )
         await interaction.followup.send(
-            f"✅ Роль {role.mention} будет выдаваться при **{minutes}** мин в голосе.", ephemeral=True
+            f"✅ Роль {self.role.mention} будет выдаваться при **{minutes}** мин в голосе.", ephemeral=True
         )
 
 
@@ -3400,7 +3412,10 @@ class SetupLevelsView(discord.ui.View):
 
     @discord.ui.button(label="Добавить роль за уровень", emoji="🎭", style=discord.ButtonStyle.blurple, row=3)
     async def btn_add_level_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(LevelRoleAddModal(self.db, self.guild_id))
+        view = RolePickView(self.db, self.guild_id, "level")
+        await interaction.response.send_message(
+            "Выберите роль, которая будет выдаваться за достижение уровня:", view=view, ephemeral=True
+        )
 
     @discord.ui.button(label="Список ролей за уровни", emoji="📋", style=discord.ButtonStyle.grey, row=3)
     async def btn_list_level_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3438,7 +3453,10 @@ class SetupLevelsView(discord.ui.View):
 
     @discord.ui.button(label="➕ Роль за голос (мин)", emoji="🎙️", style=discord.ButtonStyle.blurple, row=4)
     async def btn_add_voice_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(VoiceRoleAddModal(self.db, self.guild_id))
+        view = RolePickView(self.db, self.guild_id, "voice")
+        await interaction.response.send_message(
+            "Выберите роль, которая будет выдаваться за голосовую активность:", view=view, ephemeral=True
+        )
 
     @discord.ui.button(label="Роли за голос", emoji="📋", style=discord.ButtonStyle.grey, row=4)
     async def btn_list_voice_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4269,28 +4287,47 @@ class GitHubRepoModal(discord.ui.Modal, title="📦 Репозиторий GitHu
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-class GitHubTrackModal(discord.ui.Modal, title="📌 Отслеживать репозиторий"):
-    repo = discord.ui.TextInput(label="Репозиторий (owner/name)", required=True, max_length=100)
-    channel_id = discord.ui.TextInput(label="ID канала для уведомлений", required=True, max_length=30)
+class GitHubChannelPickView(discord.ui.View):
+    """Шаг выбора канала для уведомлений, затем — модалка с репозиторием."""
+
+    def __init__(self, db: Database, guild_id: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.guild_id = guild_id
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="📢 Канал для уведомлений...",
+        min_values=1, max_values=1,
+    )
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        channel = select.values[0]
+        await interaction.response.send_modal(GitHubTrackRepoModal(self.db, self.guild_id, channel))
+
+
+class GitHubTrackRepoModal(discord.ui.Modal):
+    def __init__(self, db: Database, guild_id: int, channel: discord.TextChannel):
+        super().__init__(title=f"Отслеживать в #{channel.name[:40]}")
+        self.db = db
+        self.guild_id = guild_id
+        self.channel = channel
+        self.repo = discord.ui.TextInput(label="Репозиторий (owner/name)", required=True, max_length=100)
+        self.add_item(self.repo)
 
     async def on_submit(self, interaction: discord.Interaction):
-        db = Database()
+        await interaction.response.defer(ephemeral=True)
         repo = self.repo.value.strip()
-        try:
-            channel_id = int(self.channel_id.value.strip())
-        except ValueError:
-            return await interaction.response.send_message("❌ Некорректный ID канала.", ephemeral=True)
-        channel = interaction.guild.get_channel(channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return await interaction.response.send_message("❌ Канал не найден (нужен ID текстового канала).", ephemeral=True)
-
-        config = await db.get_guild_config(str(interaction.guild.id))
+        config = await self.db.get_guild_config(str(self.guild_id))
         tracked = config.get("github_tracked_repos", [])
         if any(t["repo"] == repo for t in tracked):
-            return await interaction.response.send_message("❌ Этот репозиторий уже отслеживается.", ephemeral=True)
-        tracked.append({"repo": repo, "channel_id": str(channel.id)})
-        await db.update_config_field(str(interaction.guild.id), "github_tracked_repos", tracked)
-        await interaction.response.send_message(f"✅ Отслеживание **{repo}** настроено в {channel.mention}", ephemeral=True)
+            return await interaction.followup.send("❌ Этот репозиторий уже отслеживается.", ephemeral=True)
+        tracked.append({"repo": repo, "channel_id": str(self.channel.id)})
+        await self.db.update_config_field(str(self.guild_id), "github_tracked_repos", tracked)
+        await log_settings_change(interaction, "GitHub", f"**Репозиторий:** {repo}\n**Канал:** {self.channel.mention}")
+        await interaction.followup.send(
+            f"✅ Отслеживание **{repo}** настроено в {self.channel.mention}", ephemeral=True
+        )
 
 
 class GitHubUntrackModal(discord.ui.Modal, title="🚫 Прекратить отслеживание"):
@@ -4323,7 +4360,10 @@ class SetupGithubView(discord.ui.View):
 
     @discord.ui.button(label="Отслеживать", emoji="📌", style=discord.ButtonStyle.success, row=0)
     async def btn_track(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(GitHubTrackModal())
+        view = GitHubChannelPickView(self.db, self.guild_id)
+        await interaction.response.send_message(
+            "Выберите канал для уведомлений о событиях репозитория:", view=view, ephemeral=True
+        )
 
     @discord.ui.button(label="Отписаться", emoji="🚫", style=discord.ButtonStyle.danger, row=0)
     async def btn_untrack(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4355,15 +4395,50 @@ class SetupBirthdaysView(discord.ui.View):
         self.guild_id = guild_id
         self.add_item(BackButton())
 
-    @discord.ui.button(label="Канал поздравлений", emoji="📢", style=discord.ButtonStyle.blurple, row=0)
-    async def btn_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(BirthdayChannelModal())
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="📢 Канал поздравлений...",
+        min_values=0, max_values=1, row=0,
+    )
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        await interaction.response.defer(ephemeral=True)
+        cog = interaction.client.get_cog("Birthdays")
+        if not cog:
+            return await interaction.followup.send("❌ Модуль «Дни рождения» выключен.", ephemeral=True)
+        if not select.values:
+            config = await self.db.get_guild_config(str(self.guild_id))
+            config.pop("birthdays_channel_id", None)
+            await self.db.update_guild_config(str(self.guild_id), **config)
+            return await interaction.followup.send("✅ Канал поздравлений убран.", ephemeral=True)
+        channel = select.values[0]
+        config = await self.db.get_guild_config(str(self.guild_id))
+        config["birthdays_channel_id"] = str(channel.id)
+        await self.db.update_guild_config(str(self.guild_id), **config)
+        await interaction.followup.send(f"✅ Канал поздравлений: {channel.mention}", ephemeral=True)
 
-    @discord.ui.button(label="Роль на праздник", emoji="🎖️", style=discord.ButtonStyle.blurple, row=0)
-    async def btn_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(BirthdayRoleModal())
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="🎖️ Роль на праздник...",
+        min_values=0, max_values=1, row=1,
+    )
+    async def select_role(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        await interaction.response.defer(ephemeral=True)
+        cog = interaction.client.get_cog("Birthdays")
+        if not cog:
+            return await interaction.followup.send("❌ Модуль «Дни рождения» выключен.", ephemeral=True)
+        if not select.values:
+            config = await self.db.get_guild_config(str(self.guild_id))
+            config.pop("birthdays_role_id", None)
+            await self.db.update_guild_config(str(self.guild_id), **config)
+            return await interaction.followup.send("✅ Роль на праздник убрана.", ephemeral=True)
+        role = select.values[0]
+        config = await self.db.get_guild_config(str(self.guild_id))
+        config["birthdays_role_id"] = str(role.id)
+        await self.db.update_guild_config(str(self.guild_id), **config)
+        await interaction.followup.send(f"✅ Роль на день рождения: {role.mention}", ephemeral=True)
 
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=1)
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
         channel = (interaction.guild.get_channel(int(config["birthdays_channel_id"]))
@@ -4383,26 +4458,6 @@ class SetupBirthdaysView(discord.ui.View):
         embed = discord.Embed(title="🎂 Дни рождения — настройки", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-class BirthdayChannelModal(discord.ui.Modal, title="📢 Канал поздравлений"):
-    channel_id = discord.ui.TextInput(label="ID канала", placeholder="1234567890", max_length=30)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        cog = interaction.client.get_cog("Birthdays")
-        if not cog:
-            return await interaction.response.send_message("❌ Модуль «Дни рождения» выключен.", ephemeral=True)
-        await cog.set_bday_channel(interaction, self.channel_id.value)
-
-
-class BirthdayRoleModal(discord.ui.Modal, title="🎖️ Роль на праздник"):
-    role_id = discord.ui.TextInput(label="ID роли", placeholder="1234567890", max_length=30)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        cog = interaction.client.get_cog("Birthdays")
-        if not cog:
-            return await interaction.response.send_message("❌ Модуль «Дни рождения» выключен.", ephemeral=True)
-        await cog.set_bday_role(interaction, self.role_id.value)
 
 
 class SetupLotteryView(discord.ui.View):
