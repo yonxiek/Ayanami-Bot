@@ -1,5 +1,6 @@
 import json as _json
 import io
+import re
 from datetime import datetime, timezone
 
 import aiohttp
@@ -9,6 +10,10 @@ from discord.ext import commands
 
 from db import Database
 from ui_components import AyanamiUI, Colors
+
+
+def _digits_only(text: str) -> str:
+    return re.sub(r"\D", "", text or "")
 
 
 async def log_settings_change(interaction: discord.Interaction, title: str, details: str):
@@ -107,6 +112,7 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Права команд", value="perms", emoji="🔒", description="Доступ к командам по ролям"),
             discord.SelectOption(label="Лотерея", value="lottery", emoji="🎟", description="Запуск и управление лотереей"),
             discord.SelectOption(label="Интеграции", value="integrations", emoji="🔌", description="API-ключи: погода и статусы провайдеров ИИ"),
+            discord.SelectOption(label="Счётчики каналов", value="counters", emoji="📊", description="Голосовые каналы со статистикой сервера"),
         ]
         select = discord.ui.Select(placeholder="Выберите модуль для настройки...", options=options)
         select.callback = self.menu_callback
@@ -152,6 +158,7 @@ class DashboardView(discord.ui.LayoutView):
             "integrations": lambda: SetupIntegrationsView(self.cog, db, self.guild_id),
             "webhooks": lambda: SetupWebhookView(self.cog, db, self.guild_id),
             "data": lambda: SetupDataView(self.cog, db, self.guild_id),
+            "counters": lambda: SetupCountersView(self.cog, db, self.guild_id),
         }
 
         if val == "perms":
@@ -2653,6 +2660,102 @@ class SetupDataView(discord.ui.View):
     @discord.ui.button(label="Импорт настроек", emoji="📥", style=discord.ButtonStyle.blurple, row=1)
     async def btn_import(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DataImportModal())
+
+
+class CounterAddModal(discord.ui.Modal, title="📊 Добавить счётчик"):
+    channel = discord.ui.TextInput(label="ID голосового канала", required=True, max_length=40)
+    counter_type = discord.ui.TextInput(
+        label="Тип счётчика", required=True, max_length=30,
+        placeholder="members, users, bots, online, voice, boost, boostlvl, channels, roles, emoji, stickers",
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("ChannelCounters")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль счётчиков недоступен.", ephemeral=True)
+        digits = _digits_only(self.channel.value)
+        if not digits:
+            return await interaction.response.send_message("❌ Укажите ID голосового канала.", ephemeral=True)
+        channel = interaction.guild.get_channel(int(digits))
+        if not isinstance(channel, discord.VoiceChannel):
+            return await interaction.response.send_message("❌ Канал не найден или не является голосовым.", ephemeral=True)
+        ctype = self.counter_type.value.strip().lower()
+        if ctype not in cog.TYPES:
+            help_types = ", ".join(f"`{k}`" for k in cog.TYPES)
+            return await interaction.response.send_message(f"❌ Тип должен быть одним из: {help_types}", ephemeral=True)
+        await cog._add_counter(interaction.guild, channel.id, ctype)
+        await log_settings_change(interaction, "Счётчики", f"**Действие:** добавлен счётчик\n**Канал:** {channel.mention}\n**Тип:** {cog.TYPES[ctype]}")
+        await interaction.response.send_message(
+            f"✅ В канале {channel.mention} теперь показывается **{cog.TYPES[ctype]}**.", ephemeral=True)
+
+
+class CounterRemoveModal(discord.ui.Modal, title="🗑️ Удалить счётчик"):
+    channel = discord.ui.TextInput(label="ID голосового канала (или его упоминание)", required=True, max_length=40)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("ChannelCounters")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль счётчиков недоступен.", ephemeral=True)
+        digits = _digits_only(self.channel.value)
+        if not digits:
+            return await interaction.response.send_message("❌ Укажите ID голосового канала.", ephemeral=True)
+        ok = await cog._remove_counter(interaction.guild, int(digits))
+        if not ok:
+            return await interaction.response.send_message("❌ В этом канале нет счётчика.", ephemeral=True)
+        await log_settings_change(interaction, "Счётчики", f"**Действие:** удалён счётчик\n**Канал ID:** {digits}")
+        await interaction.response.send_message("✅ Счётчик убран.", ephemeral=True)
+
+
+class SetupCountersView(discord.ui.View):
+    def __init__(self, cog, db: Database, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(BackButton())
+
+    @discord.ui.button(label="Добавить счётчик", emoji="➕", style=discord.ButtonStyle.success, row=1)
+    async def btn_add(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CounterAddModal())
+
+    @discord.ui.button(label="Список", emoji="📋", style=discord.ButtonStyle.secondary, row=1)
+    async def btn_list(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("ChannelCounters")
+        if not cog:
+            return await interaction.response.send_message("❌ Модуль счётчиков недоступен.", ephemeral=True)
+        counters = await cog._list_counters(interaction.guild)
+        if not counters:
+            return await interaction.response.send_message("📊 Счётчиков пока нет. Добавьте первый!", ephemeral=True)
+        lines = [f"{name} — **{cog.TYPES.get(t, t)}**: {value}" for name, t, value, _ in counters]
+        embed = discord.Embed(title="📊 Счётчики каналов", description="\n".join(lines), color=Colors.MAIN)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Удалить счётчик", emoji="🗑️", style=discord.ButtonStyle.danger, row=1)
+    async def btn_remove(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CounterRemoveModal())
+
+    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
+    async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await self.db.get_guild_config(str(self.guild_id))
+        counters = config.get("channel_counters", {}) or {}
+        lines = [
+            "### 📊 Счётчики каналов",
+            f"**Активных счётчиков:** {len(counters)}",
+            "",
+            "**Типы:**",
+            "• `members` — все участники\n"
+            "• `users` / `bots` — люди / боты\n"
+            "• `online` — в сети\n"
+            "• `voice` — в голосовых каналах\n"
+            "• `boost` / `boostlvl` — бусты и уровень сервера\n"
+            "• `channels` / `roles` / `emoji` / `stickers` — каналы, роли, эмодзи, стикеры",
+            "",
+            "**Как добавить:** нажмите «Добавить счётчик», укажите ID голосового канала "
+            "и тип (например `members`).",
+        ]
+        embed = discord.Embed(title="📩 Настройки счётчиков", description="\n".join(lines), color=Colors.MAIN)
+        embed.set_footer(text="Ayanami System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class DataClearView(discord.ui.View):

@@ -18,6 +18,17 @@ COLORS = {
     "Страйки": 0xc0392b,
 }
 
+HELP = {
+    "Санкции": "Варны, муты, кики и баны с автоматической записью в журнал модерации.",
+    "Каналы": "Очистка сообщений (в том числе у конкретного участника), слоумод, лок и анлок канала.",
+    "Ники": "Смена ника участника или сброс к стандартному.",
+    "Голос": "Войс-кик, глушение и снятие заглушения.",
+    "Роли": "Выдача или снятие ролей у участников.",
+    "Чёрный список": "Внесение в ЧС (снятие ролей) и снятие с ЧС.",
+    "Страйки": "Страйки для модераторов: выдать, снять, посмотреть список.",
+    "Журнал": "Заметки модераторов об участниках и история наказаний.",
+}
+
 
 def _extract_id(text: str | None) -> int | None:
     digits = re.sub(r"\D", "", text or "")
@@ -69,13 +80,16 @@ class ModMenuView(discord.ui.View):
         ],
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
+        category = select.values[0]
+        embed = discord.Embed(
+            title=f"🛡️ {category}",
+            description=f"{HELP.get(category, '')}\n\nВыберите действие ниже.",
+            color=COLORS[category],
+        )
+        embed.set_footer(text="Ayanami System")
         await interaction.response.edit_message(
-            embed=discord.Embed(
-                title=f"🛡️ {select.values[0]}",
-                description="Выберите действие ниже.",
-                color=COLORS[select.values[0]],
-            ).set_footer(text="Ayanami System"),
-            view=ModCategoryView(self.cog, select.values[0]),
+            embed=embed,
+            view=ModCategoryView(self.cog, category),
         )
 
 
@@ -155,7 +169,11 @@ class ModCategoryView(discord.ui.View):
     async def _back(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="🛡️ Меню модерации",
-            description="Выберите раздел ниже. Отображаются только те, кто имеет права модератора.",
+            description=(
+                "Выберите раздел ниже. Отображаются только те, кто имеет права модератора.\n\n"
+                "**Доступно:** 🎯 Санкции · 🧰 Каналы · 🔤 Ники · 🎙️ Голос · 🎭 Роли · "
+                "🚫 Чёрный список · 🔨 Страйки · 📝 Журнал"
+            ),
             color=0x2B2D31,
         )
         embed.set_footer(text="Ayanami System")
@@ -254,7 +272,11 @@ class ModMenu(commands.Cog):
             )
         embed = discord.Embed(
             title="🛡️ Меню модерации",
-            description="Выберите раздел ниже.",
+            description=(
+                "Выберите раздел ниже.\n\n"
+                "**Доступно:** 🎯 Санкции · 🧰 Каналы · 🔤 Ники · 🎙️ Голос · 🎭 Роли · "
+                "🚫 Чёрный список · 🔨 Страйки · 📝 Журнал"
+            ),
             color=0x2B2D31,
         )
         embed.set_footer(text="Ayanami System")
