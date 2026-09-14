@@ -198,8 +198,8 @@ class Achievements(commands.Cog):
             lines = lines[:40]
 
         embed = discord.Embed(
-            title=f"🏅 Достижения — {target.mention}",
-            description="\n".join(lines),
+            title="🏅 Достижения",
+            description=f"{target.mention}\n" + "\n".join(lines),
             color=Colors.MAIN,
         )
         embed.set_footer(text=f"Выполнено: {len(earned_ids)} из {total_all}")

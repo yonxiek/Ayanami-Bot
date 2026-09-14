@@ -134,8 +134,8 @@ class Collectibles(commands.Cog):
             total += r["quantity"]
 
         embed = discord.Embed(
-            title=f"🃏 Коллекция {target.mention}",
-            description="\n".join(lines[:25]),
+            title="🃏 Коллекция",
+            description=f"{target.mention}\n" + "\n".join(lines[:25]),
             color=Colors.MAIN,
         )
         embed.set_footer(text=f"Всего: {total} карточек")

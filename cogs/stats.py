@@ -89,9 +89,9 @@ class StatsView(discord.ui.View):
         commands = self.series["commands"]
 
         if self.mode == "weekly":
-            embed.title = f"📊 Активность: {self.mention}"
+            embed.title = "📊 Активность"
             weeks = " · ".join(f"`W{self.keys[-i].split('-W', 1)[-1]}`" for i in range(len(self.keys), 0, -1))
-            embed.description = f"Последние **{len(self.keys)} недель**\n{weeks}"
+            embed.description = f"{self.mention}\nПоследние **{len(self.keys)} недель** · {weeks}"
             embed.add_field(name="💬 Сообщения", value=fmt_num(sum(messages)), inline=True)
             embed.add_field(name="🎙 Голос (мин)", value=fmt_voice(sum(voice)), inline=True)
             embed.add_field(name="⌨️ Команды", value=fmt_num(sum(commands)), inline=True)
@@ -109,8 +109,8 @@ class StatsView(discord.ui.View):
                 ]
                 embed.add_field(name="📈 Динамика по неделям", value="\n".join(lines), inline=False)
         else:
-            embed.title = f"📆 Дни недели: {self.mention}"
-            embed.description = "Активность за **28 дней**: сообщения + голос ÷ 10 + команды"
+            embed.title = "📆 Дни недели"
+            embed.description = f"{self.mention}\nАктивность за **28 дней**: сообщения + голос ÷ 10 + команды"
             if sum(self.dow) == 0:
                 embed.add_field(
                     name="ℹ️",

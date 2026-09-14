@@ -563,8 +563,8 @@ class Shop(commands.Cog):
             lines.append(f"\n🎁 **Открыто кейсов:** {opened_cases}")
 
         embed = discord.Embed(
-            title=f"Инвентарь — {target.mention}",
-            description="\n".join(lines) if items or cards or titles else f"{lines[0]}\n\nПусто, но это исправимо!",
+            title="Инвентарь",
+            description=(f"{target.mention}\n" + "\n".join(lines)) if items or cards or titles else f"{lines[0]}\n\nПусто, но это исправимо!",
             color=Colors.MAIN,
         )
         embed.set_thumbnail(url=target.display_avatar.url)

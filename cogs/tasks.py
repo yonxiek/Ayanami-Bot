@@ -35,8 +35,8 @@ class Tasks(commands.Cog):
             mark = "🟢" if t["status"] == "open" else "✅"
             lines.append(f"{mark} `#{t['task_id']}` **{t['title']}**")
         embed = discord.Embed(
-            title=f"📋 Задачи — {interaction.user.mention}",
-            description="\n".join(lines),
+            title="📋 Задачи",
+            description=f"{interaction.user.mention}\n" + "\n".join(lines),
             color=Colors.MAIN,
         )
         embed.set_footer(text=f"Всего: {len(tasks)} • открыто: {open_count}")

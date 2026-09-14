@@ -303,7 +303,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         )
 
         embed = discord.Embed(
-            title=f"Профиль — {target.mention}",
+            title="Профиль",
             description=description,
             color=Colors.MAIN,
         )
