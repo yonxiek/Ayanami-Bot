@@ -748,6 +748,21 @@ class Database:
         await self.conn.execute('DELETE FROM game_scores WHERE guild_id = ?', (guild_id,))
         await self.conn.commit()
 
+    async def clear_mod_stats(self, guild_id: str):
+        await self.conn.execute('DELETE FROM mod_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
+    async def clear_activity_keep_balance(self, guild_id: str):
+        await self.conn.execute(
+            'UPDATE users SET total_messages = 0, total_voice_minutes = 0, total_commands = 0, '
+            'reputation = 0, exp = 0, level = 1, raids_attended = 0 WHERE guild_id = ?',
+            (guild_id,)
+        )
+        await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ?', (guild_id,))
+        await self.conn.commit()
+
     async def clear_all_activity(self, guild_id: str):
         await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ?', (guild_id,))
         await self.conn.execute(

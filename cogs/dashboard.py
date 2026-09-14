@@ -89,7 +89,6 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Уровни", value="levels", emoji="📊", description="Система уровней, XP, роли за уровни"),
             discord.SelectOption(label="Авто-модерация", value="automod", emoji="🤖", description="Анти-спам, капс, ссылки, капча"),
             discord.SelectOption(label="Приватные команды", value="private", emoji="🔐", description="Скрытие команд от определённых ролей"),
-            discord.SelectOption(label="Права команд", value="perms", emoji="🔒", description="Доступ к командам по ролям"),
             discord.SelectOption(label="Квесты", value="quests", emoji="📜", description="Ежедневные квесты и награды за прогресс"),
             discord.SelectOption(label="Магазин", value="shop", emoji="🛒", description="Товары, цены и стоки магазина"),
             discord.SelectOption(label="Титулы", value="titles", emoji="🏷️", description="Выдача и управление титулами участников"),
@@ -100,13 +99,13 @@ class DashboardView(discord.ui.LayoutView):
             discord.SelectOption(label="Карточки", value="cards", emoji="🃏", description="Пул коллекционных карточек"),
             discord.SelectOption(label="Кейсы", value="cases", emoji="🎁", description="Кейсы с дропом ролей, карточек и монет"),
             discord.SelectOption(label="GitHub", value="github", emoji="🐙", description="Отслеживание репозиториев и уведомления"),
-            discord.SelectOption(label="Дни рождения", value="birthdays", emoji="🎂", description="Канал поздравлений и роль на праздник"),
-            discord.SelectOption(label="Лотерея", value="lottery", emoji="🎟", description="Запуск и управление лотереей"),
-            discord.SelectOption(label="Интеграции", value="integrations", emoji="🔌", description="API-ключи: погода и статусы провайдеров ИИ"),
         ]
         extra_options = [
             discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
             discord.SelectOption(label="Данные", value="data", emoji="🗑️", description="Очистка данных: активность, квесты, полный сброс бота"),
+            discord.SelectOption(label="Права команд", value="perms", emoji="🔒", description="Доступ к командам по ролям"),
+            discord.SelectOption(label="Лотерея", value="lottery", emoji="🎟", description="Запуск и управление лотереей"),
+            discord.SelectOption(label="Интеграции", value="integrations", emoji="🔌", description="API-ключи: погода и статусы провайдеров ИИ"),
         ]
         select = discord.ui.Select(placeholder="Выберите модуль для настройки...", options=options)
         select.callback = self.menu_callback
@@ -2630,7 +2629,9 @@ class SetupDataView(discord.ui.View):
                         "• **🧨 Вся активность** — сообщения, войс, команды, XP, уровни, "
                         "репутация, серии, достижения, недельная статистика\n"
                         "• **💥 Полный сброс** — удалит ВСЕ данные и настройки сервера, "
-                        "и `/setup` придётся проходить заново",
+                        "и `/setup` придётся проходить заново\n"
+                        "• **Статистика модерации** — обнулит счётчики действий модераторов (`/modstats`)\n"
+                        "• **Активность без баланса** — сбросит активность, но сохранит монеты и достижения",
             color=Colors.MAIN,
         )
         embed.set_footer(text="Опасные операции требуют подтверждения")
@@ -2659,6 +2660,8 @@ class DataClearView(discord.ui.View):
             discord.SelectOption(label="Мини-игры", value="games", description="Сбросить счёт игр"),
             discord.SelectOption(label="Квесты", value="quests", description="Удалить квесты и прогресс по ним"),
             discord.SelectOption(label="Балансы", value="balances", description="Обнулить монетки"),
+            discord.SelectOption(label="Статистика модерации", value="mod_stats", description="Обнулить счётчики действий модераторов (/modstats)"),
+            discord.SelectOption(label="Активность без баланса", value="activity_no_balance", description="Сбросить активность, но сохранить монеты и достижения"),
             discord.SelectOption(label="🧨 Вся активность", value="activity_all", description="Сообщения, войс, команды, XP, репутация, серии, достижения"),
             discord.SelectOption(label="💥 Полный сброс", value="full_reset", description="ВСЕ данные и настройки — /setup заново"),
         ]
@@ -2712,6 +2715,8 @@ class DataClearView(discord.ui.View):
             "games": (db.clear_game_scores, "✅ Счёт игр сброшен."),
             "quests": (self._clear_quests, "✅ Квесты и их прогресс удалены."),
             "balances": (db.clear_balances, "✅ Балансы обнулены."),
+            "mod_stats": (db.clear_mod_stats, "✅ Статистика модерации обнулена."),
+            "activity_no_balance": (db.clear_activity_keep_balance, "✅ Активность сброшена — монеты и достижения сохранены."),
         }
         func, msg = handlers.get(value, (None, None))
         if func is None:
@@ -2720,7 +2725,7 @@ class DataClearView(discord.ui.View):
             await db.clear_voice_stats(guild_id)
             self._reset_voice_sessions()
         else:
-            result = func()
+            result = func(guild_id)
             if hasattr(result, "__await__"):
                 await result
 
@@ -2734,9 +2739,9 @@ class DataClearView(discord.ui.View):
         await interaction.response.edit_message(view=self)
         await interaction.followup.send(msg, ephemeral=True)
 
-    async def _clear_quests(self):
-        await self.db.clear_all_quests(str(self.guild_id))
-        await self.db.clear_random_pool(str(self.guild_id))
+    async def _clear_quests(self, guild_id: str):
+        await self.db.clear_all_quests(guild_id)
+        await self.db.clear_random_pool(guild_id)
 
 
 class DataClearConfirmView(discord.ui.View):
