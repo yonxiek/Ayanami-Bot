@@ -107,6 +107,104 @@ def render_activity_chart(week_keys: list[str], series: dict[str, list[int]], di
     return img
 
 
+def render_dow_chart(dow: list[int], display_name: str):
+    labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    W, H = 900, 430
+    img = Image.new("RGB", (W, H), (43, 45, 49))
+    draw = ImageDraw.Draw(img)
+
+    title_font = _load_font(26, bold=True)
+    small_font = _load_font(14)
+    legend_font = _load_font(18)
+
+    draw.text((24, 16), f"Активность по дням недели (28 дн.) — {display_name}",
+              font=title_font, fill=(245, 245, 245))
+    draw.rectangle([W - 250, 14, W - 234, 30], fill=(43, 108, 176))
+    draw.text((W - 228, 12), "Сообщения + голос + команды", font=legend_font, fill=(220, 220, 220))
+
+    left, top, right, bottom = 70, 80, W - 40, H - 55
+    max_val = max(1, max(dow))
+
+    for step_frac in (0, 0.25, 0.5, 0.75, 1.0):
+        y = bottom - step_frac * (bottom - top)
+        draw.line([left, y, right, y], fill=(60, 62, 68))
+        val = int(round(step_frac * max_val))
+        draw.text((12, y - 8), str(val), font=small_font, fill=(160, 160, 160))
+
+    bar_width = 72
+    gap = (right - left - 7 * bar_width) / 6
+    for i, v in enumerate(dow):
+        bar_h = (v / max_val) * (bottom - top)
+        if bar_h < 2 and v > 0:
+            bar_h = 2
+        bx = left + i * (bar_width + gap)
+        draw.rounded_rectangle([bx, bottom - bar_h, bx + bar_width, bottom],
+                               radius=6, fill=(43, 108, 176))
+        draw.text((bx + bar_width / 2, bottom + 8), labels[i], font=small_font,
+                  fill=(200, 200, 200), anchor="mm")
+        if v > 0:
+            label = str(v)
+            tw = draw.textlength(label, font=small_font)
+            draw.text((bx + bar_width / 2 - tw / 2, bottom - bar_h - 18), label,
+                      font=small_font, fill=(220, 220, 220))
+
+    return img
+
+
+class StatsView(discord.ui.View):
+    def __init__(self, keys, series, dow, display_name, summary, member_flag, avatar_url, guild_icon, user_id):
+        super().__init__(timeout=180)
+        self.keys = keys
+        self.series = series
+        self.dow = dow
+        self.display_name = display_name
+        self.summary = summary
+        self.member_flag = member_flag
+        self.avatar_url = avatar_url
+        self.guild_icon = guild_icon
+        self.user_id = user_id
+        self.mode = "weekly"
+
+    def build(self):
+        if self.mode == "weekly":
+            img = render_activity_chart(self.keys, self.series, self.display_name)
+            title = f"📊 Активность: {self.display_name}"
+            desc = None
+        else:
+            img = render_dow_chart(self.dow, self.display_name)
+            title = f"📆 Дни недели: {self.display_name}"
+            desc = "Усреднённая активность за последние 28 дней (сообщения + голос/10 + команды)."
+        embed = discord.Embed(title=title, description=desc, color=Colors.MAIN)
+        if self.guild_icon:
+            embed.set_thumbnail(url=self.guild_icon)
+        for label, value in self.summary[:3]:
+            embed.add_field(name=label, value=value, inline=True)
+        if desc and sum(self.dow) == 0:
+            embed.add_field(name="ℹ️", value="Данных пока нет — статистика копится с этого дня.", inline=False)
+        embed.set_image(url="attachment://stats.png")
+        embed.set_footer(text=f"ID: {self.user_id}")
+        embed.set_author(name="Статистика участника" if self.member_flag else "Ваша статистика",
+                         icon_url=self.avatar_url)
+        return img, embed
+
+    @discord.ui.button(label="Недели", emoji="📅", style=discord.ButtonStyle.primary, row=0)
+    async def btn_weekly(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.mode = "weekly"
+        await self._refresh(interaction)
+
+    @discord.ui.button(label="Дни недели", emoji="📆", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_daily(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.mode = "daily"
+        await self._refresh(interaction)
+
+    async def _refresh(self, interaction: discord.Interaction):
+        img, embed = self.build()
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        buf.seek(0)
+        await interaction.response.edit_message(embed=embed, view=self, file=discord.File(buf, filename="stats.png"))
+
+
 class WeeklyStats(VoiceTrackerMixin, commands.Cog):
     def __init__(self, bot):
         super().__init__(bot)
@@ -129,6 +227,7 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
         while not self.bot.is_closed():
             try:
                 await self.db.prune_weekly_stats()
+                await self.db.prune_daily_activity()
             except Exception as e:
                 print(f"Ошибка очистки статистики: {e}")
             await asyncio.sleep(3600)
@@ -138,7 +237,9 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
         if message.author.bot or not message.guild:
             return
         guild_id, user_id = str(message.guild.id), str(message.author.id)
+        today = datetime.now(timezone.utc).date().isoformat()
         await self.db.increment_weekly(guild_id, user_id, current_week_key(), "messages")
+        await self.db.increment_daily(guild_id, user_id, today, "messages")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -149,14 +250,20 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
         elif before.channel is not None and after.channel is None:
             minutes, _ = self.track_voice_leave(member.guild.id, member.id)
             if minutes > 0:
+                today = datetime.now(timezone.utc).date().isoformat()
                 await self.db.increment_weekly(str(member.guild.id), str(member.id), current_week_key(), "voice_minutes", minutes)
+                await self.db.increment_daily(str(member.guild.id), str(member.id), today, "voice_minutes", minutes)
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction: discord.Interaction, command):
         if not interaction.guild:
             return
+        today = datetime.now(timezone.utc).date().isoformat()
         await self.db.increment_weekly(
             str(interaction.guild.id), str(interaction.user.id), current_week_key(), "commands"
+        )
+        await self.db.increment_daily(
+            str(interaction.guild.id), str(interaction.user.id), today, "commands"
         )
 
     @app_commands.command(name="stats", description="График активности за последние 8 недель")
@@ -183,6 +290,7 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             "voice_minutes": [data.get(k)['voice_minutes'] if data.get(k) else 0 for k in keys],
             "commands": [data.get(k)['commands'] if data.get(k) else 0 for k in keys],
         }
+        dow = await self.db.get_daily_activity_by_dow(guild_id, user_id)
 
         cursor = await self.db.conn.execute(
             "SELECT total_messages, total_voice_minutes, total_commands, reputation FROM users "
@@ -190,30 +298,30 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             (guild_id, user_id))
         urow = await cursor.fetchone()
 
-        img = render_activity_chart(keys, series, target.display_name)
+        summary = [
+            ("💬 Сообщений (8 нед.)", str(sum(series["messages"]))),
+        ]
+        total_voice = sum(series["voice_minutes"])
+        summary.append(("🎙 Голос (8 нед.)",
+                        f"{total_voice} мин" if total_voice < 60 else f"≈{total_voice // 60} ч {total_voice % 60} мин"))
+        summary.append(("⌨️ Команд (8 нед.)", str(sum(series["commands"]))))
+        if urow:
+            summary.append(("🏅 Сообщений всего", str(urow["total_messages"])))
+            tm = urow["total_voice_minutes"]
+            summary.append(("⏱ В голосе всего", f"{tm // 60} ч {tm % 60} мин"))
+            summary.append(("⭐ Репутация", str(urow["reputation"])))
+
+        view = StatsView(
+            keys=keys, series=series, dow=dow, display_name=target.display_name,
+            summary=summary, member_flag=bool(member), avatar_url=target.display_avatar.url,
+            guild_icon=interaction.guild.icon.url if interaction.guild.icon else None,
+            user_id=str(target.id),
+        )
+        img, embed = view.build()
         buf = io.BytesIO()
         img.save(buf, "PNG")
         buf.seek(0)
-
-        embed = discord.Embed(title=f"📊 Активность: {target.display_name}", color=Colors.MAIN)
-        if interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
-        embed.add_field(name="💬 Сообщений (8 нед.)", value=str(sum(series["messages"])), inline=True)
-        total_voice = sum(series["voice_minutes"])
-        embed.add_field(name="🎙 Голос (8 нед.)", value=f"{total_voice} мин" if total_voice < 60 else f"≈{total_voice // 60} ч {total_voice % 60} мин", inline=True)
-        embed.add_field(name="⌨️ Команд (8 нед.)", value=str(sum(series["commands"])), inline=True)
-        if urow:
-            embed.add_field(name="🏅 Сообщений всего", value=str(urow["total_messages"]), inline=True)
-            tm = urow["total_voice_minutes"]
-            embed.add_field(name="⏱ В голосе всего", value=f"{tm // 60} ч {tm % 60} мин", inline=True)
-            embed.add_field(name="⭐ Репутация", value=str(urow["reputation"]), inline=True)
-        embed.set_image(url="attachment://stats.png")
-        embed.set_footer(text=f"ID: {target.id}")
-        if member:
-            embed.set_author(name="Статистика участника", icon_url=target.display_avatar.url)
-        else:
-            embed.set_author(name="Ваша статистика", icon_url=target.display_avatar.url)
-        await interaction.followup.send(embed=embed, file=discord.File(buf, filename="stats.png"))
+        await interaction.followup.send(embed=embed, view=view, file=discord.File(buf, filename="stats.png"))
 
     @commands.command(name="stats")
     async def stats_prefix(self, ctx, member: discord.Member = None):

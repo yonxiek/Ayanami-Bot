@@ -225,6 +225,15 @@ class Database:
                 commands INTEGER DEFAULT 0,
                 PRIMARY KEY (guild_id, user_id, week_key)
             )''',
+            '''CREATE TABLE IF NOT EXISTS daily_activity (
+                guild_id TEXT,
+                user_id TEXT,
+                date TEXT,
+                messages INTEGER DEFAULT 0,
+                voice_minutes INTEGER DEFAULT 0,
+                commands INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id, date)
+            )''',
             '''CREATE TABLE IF NOT EXISTS tickets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT,
@@ -868,6 +877,7 @@ class Database:
         )
         await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ?', (guild_id,))
         await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM daily_activity WHERE guild_id = ?', (guild_id,))
         await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ?', (guild_id,))
         await self.conn.commit()
 
@@ -879,6 +889,7 @@ class Database:
             (guild_id,)
         )
         await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ?', (guild_id,))
+        await self.conn.execute('DELETE FROM daily_activity WHERE guild_id = ?', (guild_id,))
         await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ?', (guild_id,))
         await self.conn.execute('DELETE FROM achievements WHERE guild_id = ?', (guild_id,))
         await self.conn.execute('DELETE FROM duel_stats WHERE guild_id = ?', (guild_id,))
@@ -894,6 +905,7 @@ class Database:
         )
         await self.conn.execute('DELETE FROM user_activities WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
         await self.conn.execute('DELETE FROM weekly_stats WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
+        await self.conn.execute('DELETE FROM daily_activity WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
         await self.conn.execute('DELETE FROM daily_rewards WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
         await self.conn.execute('DELETE FROM user_quests WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
         await self.conn.execute('DELETE FROM achievements WHERE guild_id = ? AND user_id = ?', (guild_id, user_id))
@@ -908,7 +920,7 @@ class Database:
             'daily_quests', 'user_quests', 'shop_items', 'user_inventory', 'user_titles',
             'user_activities', 'daily_rewards', 'random_quest_pool', 'random_quest_config',
             'temporary_roles', 'xp_boosts', 'reminders', 'achievements', 'duel_stats',
-            'weekly_stats', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
+            'weekly_stats', 'daily_activity', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
             'user_cards', 'ai_moderation_log', 'server_events', 'cases', 'case_items',
             'transfers', 'trades'
         ]
@@ -1515,6 +1527,46 @@ class Database:
             weeks_ago = (current_year - year) * 52 + (current_week_num - week)
             if weeks_ago >= keep_weeks:
                 await self.conn.execute('DELETE FROM weekly_stats WHERE week_key = ?', (key,))
+        await self.conn.commit()
+
+    async def increment_daily(self, guild_id: str, user_id: str, date: str, field: str, amount: int = 1):
+        if field not in ('messages', 'voice_minutes', 'commands'):
+            return
+        await self.conn.execute(
+            f'INSERT INTO daily_activity (guild_id, user_id, date, messages, voice_minutes, commands) VALUES (?, ?, ?, ?, ?, ?) '
+            f'ON CONFLICT(guild_id, user_id, date) DO UPDATE SET {field} = {field} + ?',
+            (guild_id, user_id, date,
+             1 if field == 'messages' else 0,
+             1 if field == 'voice_minutes' else 0,
+             1 if field == 'commands' else 0,
+             amount)
+        )
+        await self.conn.commit()
+
+    async def get_daily_activity_by_dow(self, guild_id: str, user_id: str, days: int = 28) -> list[dict[str, int]]:
+        from datetime import datetime, timedelta, timezone
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+        cursor = await self.conn.execute(
+            'SELECT date, messages, voice_minutes, commands FROM daily_activity '
+            'WHERE guild_id = ? AND user_id = ? AND date >= ?',
+            (guild_id, user_id, since))
+        rows = await cursor.fetchall()
+        dow = [0, 0, 0, 0, 0, 0, 0]
+        for r in rows:
+            try:
+                dt = datetime.fromisoformat(r['date']).date()
+                idx = dt.weekday()
+            except ValueError:
+                continue
+            dow[idx] += r['messages']
+            dow[idx] += r['voice_minutes'] // 10
+            dow[idx] += r['commands']
+        return dow
+
+    async def prune_daily_activity(self, keep_days: int = 90):
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).date().isoformat()
+        await self.conn.execute('DELETE FROM daily_activity WHERE date < ?', (cutoff,))
         await self.conn.commit()
 
     # ==========================================
