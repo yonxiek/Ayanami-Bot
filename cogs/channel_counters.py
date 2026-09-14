@@ -108,6 +108,7 @@ class ChannelCounters(commands.Cog):
         await self._update_guild(member.guild)
 
     @app_commands.command(name="counter_add", description="Создать счётчик в голосовом канале (роль модератора)")
+    @app_commands.describe(канал="Голосовой канал для счётчика", тип="Тип счётчика: members/users/bots/online/voice")
     @app_commands.default_permissions(manage_channels=True)
     async def counter_add_cmd(self, interaction: discord.Interaction, канал: discord.VoiceChannel, тип: str):
         if тип not in TYPES:
@@ -127,6 +128,7 @@ class ChannelCounters(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="counter_remove", description="Убрать счётчик из канала (роль модератора)")
+    @app_commands.describe(канал="Голосовой канал, из которого убрать счётчик")
     @app_commands.default_permissions(manage_channels=True)
     async def counter_remove_cmd(self, interaction: discord.Interaction, канал: discord.VoiceChannel):
         counters = await self._counters(str(interaction.guild.id))

@@ -20,6 +20,7 @@ class Summarize(commands.Cog):
         self.db = Database()
 
     @app_commands.command(name="summarize", description="Краткая сводка последних сообщений канала (ИИ)")
+    @app_commands.describe(сообщений="Сколько последних сообщений анализировать (5–150)")
     async def summarize_cmd(self, interaction: discord.Interaction, сообщений: int = 50):
         if not interaction.channel or not interaction.guild:
             return

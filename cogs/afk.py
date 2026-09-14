@@ -27,6 +27,7 @@ class Afk(commands.Cog):
         self.db = Database()
 
     @app_commands.command(name="afk", description="Уйти в AFK (автоматически снимется при возвращении)")
+    @app_commands.describe(причина="Причина ухода (необязательно)")
     async def afk_cmd(self, interaction: discord.Interaction, причина: str = "Без причины"):
         if not interaction.guild:
             return

@@ -905,6 +905,7 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="unban", description="Разбанить участника")
     @app_commands.describe(member="Пользователь или его ID, которого нужно разбанить")
+    @app_commands.describe(reason="Причина разбана (необязательно)")
     @app_commands.default_permissions(ban_members=True)
     async def unban(self, interaction: discord.Interaction, member: discord.User, reason: str = "Не указана"):
 

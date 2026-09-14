@@ -743,6 +743,7 @@ class Utils(commands.Cog):
         app_commands.Choice(name="Game Night (\u0418\u0433\u0440\u044b)", value="Game Night")
     ])
     @app_commands.describe(
+        event_type="\u0422\u0438\u043f \u0441\u043e\u0431\u044b\u0442\u0438\u044f",
         duration="\u0427\u0435\u0440\u0435\u0437 \u0441\u043a\u043e\u043b\u044c\u043a\u043e \u043d\u0430\u0447\u043d\u0435\u0442\u0441\u044f? (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440, 10m, 1h)",
         ping_role="\u041a\u0430\u043a\u0443\u044e \u0440\u043e\u043b\u044c \u043f\u0438\u043d\u0433\u0430\u043d\u0443\u0442\u044c? (\u041d\u0435\u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e)"
     )
@@ -796,7 +797,7 @@ class Utils(commands.Cog):
     @app_commands.choices(app_type=[
         app_commands.Choice(name="Модератор", value="Moderator")
     ])
-    @app_commands.describe(duration="\u0414\u043b\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440, 1h 30m, 1d, 5h)")
+    @app_commands.describe(app_type="\u041d\u0430 \u043a\u0430\u043a\u0443\u044e \u0434\u043e\u043b\u0436\u043d\u043e\u0441\u0442\u044c \u043e\u0442\u043a\u0440\u044b\u0442\u044c \u043d\u0430\u0431\u043e\u0440", duration="\u0414\u043b\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440, 1h 30m, 1d, 5h)")
     @app_commands.default_permissions(administrator=True)
     async def applications(self, interaction: discord.Interaction, app_type: str, duration: str):
         delta = parse_duration(duration)
