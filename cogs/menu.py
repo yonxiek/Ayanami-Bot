@@ -323,6 +323,60 @@ class CardGiveModal(discord.ui.Modal, title="✉️ Передать карто�
         await cog.card_give(interaction, member, self.card_id.value, amount)
 
 
+class TradeOfferModal(discord.ui.Modal, title="⚖️ Предложить трейд"):
+    recipient = discord.ui.TextInput(
+        label="Партнёр (упоминание или ID)", placeholder="@Имя", max_length=30
+    )
+    offer_card = discord.ui.TextInput(
+        label="ID вашей карточки", placeholder="например: dragon", max_length=30
+    )
+    offer_amount = discord.ui.TextInput(
+        label="Кол-во вашей карточки", placeholder="1", max_length=5
+    )
+    want_card = discord.ui.TextInput(
+        label="ID нужной карточки", placeholder="например: phoenix", max_length=30
+    )
+    want_amount = discord.ui.TextInput(
+        label="Кол-во нужной карточки", placeholder="1", max_length=5
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        db = Database()
+        cid = _extract_id(self.recipient.value)
+        member = interaction.guild.get_member(cid) if cid else None
+        if not member:
+            return await interaction.response.send_message("❌ Партнёр не найден.", ephemeral=True)
+        if member.id == interaction.user.id:
+            return await interaction.response.send_message("❌ Нельзя трейдовать самому себе.", ephemeral=True)
+        try:
+            off_amt = int(self.offer_amount.value or "1")
+            want_amt = int(self.want_amount.value or "1")
+        except ValueError:
+            return await interaction.response.send_message("❌ Количество должно быть числом.", ephemeral=True)
+        if off_amt < 1 or want_amt < 1:
+            return await interaction.response.send_message("❌ Количество должно быть >= 1.", ephemeral=True)
+        trade_id = await db.create_trade(
+            str(interaction.guild.id), str(interaction.user.id), str(member.id),
+            self.offer_card.value.strip().lower(), off_amt,
+            self.want_card.value.strip().lower(), want_amt)
+        if trade_id is None:
+            return await interaction.response.send_message(
+                "❌ Не удалось создать трейд: у вас недостаточно карточек или неверные данные.", ephemeral=True)
+        embed = discord.Embed(
+            title="⚖️ Предложение трейда",
+            description=(
+                f"{interaction.user.mention} предлагает вам обмен:\n\n"
+                f"> 🔹 Отдаёт: **{off_amt}×** `{self.offer_card.value.strip()}`\n"
+                f"> 🔸 Желает: **{want_amt}×** `{self.want_card.value.strip()}`\n\n"
+                f"ID трейда: `{trade_id}`"
+            ),
+            color=0x9b59b6,
+        )
+        embed.set_footer(text="Срок действия — 2 минуты")
+        view = TradeAcceptView(trade_id, interaction.user, member)
+        await interaction.response.send_message(embed=embed, view=view)
+
+
 class GitHubRepoModal(discord.ui.Modal, title="🐙 Репозиторий"):
     repo = discord.ui.TextInput(
         label="Репозиторий (owner/name)", placeholder="user/repo", max_length=100
@@ -561,6 +615,7 @@ class CategoryView(discord.ui.View):
             self._add_btn("Выбросить", "🃏", discord.ButtonStyle.primary, self._card_drop)
             self._add_btn("Коллекция", "📦", discord.ButtonStyle.secondary, self._card_inventory)
             self._add_btn("Передать", "✉️", discord.ButtonStyle.success, self._card_give)
+            self._add_btn("Трейд", "⚖️", discord.ButtonStyle.primary, self._card_trade)
         elif category == "Кланы":
             self._add_btn("Создать", "➕", discord.ButtonStyle.success, self._clan_create)
             self._add_btn("Мой клан", "ℹ️", discord.ButtonStyle.secondary, self._clan_info)
@@ -737,6 +792,10 @@ class CategoryView(discord.ui.View):
     async def _gh_issues(self, interaction: discord.Interaction):
         await interaction.response.send_modal(GitHubRepoModal("issues"))
 
+    # ── Cards ──
+    async def _card_trade(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TradeOfferModal())
+
     # ── Reminders ──
     async def _remind_create(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RemindCreateModal())
@@ -808,6 +867,39 @@ class CategoryView(discord.ui.View):
             color=0xf39c12,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class TradeAcceptView(discord.ui.View):
+    def __init__(self, trade_id: int, initiator: discord.Member, recipient: discord.Member):
+        super().__init__(timeout=120)
+        self.trade_id = trade_id
+        self.initiator = initiator
+        self.recipient = recipient
+
+    @discord.ui.button(label="Принять", emoji="✅", style=discord.ButtonStyle.success)
+    async def btn_accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in (self.initiator.id, self.recipient.id):
+            return await interaction.response.send_message("❌ Это не ваш трейд.", ephemeral=True)
+        db = Database()
+        ok, err = await db.accept_trade(self.trade_id)
+        for item in self.children:
+            item.disabled = True
+        if ok:
+            await interaction.response.edit_message(
+                content="✅ Трейд завершён — карточки обменены!", view=self)
+        else:
+            await interaction.response.edit_message(
+                content=f"❌ {err}", view=self)
+
+    @discord.ui.button(label="Отклонить", emoji="🚫", style=discord.ButtonStyle.danger)
+    async def btn_decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in (self.initiator.id, self.recipient.id):
+            return await interaction.response.send_message("❌ Это не ваш трейд.", ephemeral=True)
+        db = Database()
+        await db.cancel_trade(self.trade_id)
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(content="🚫 Трейд отклонён.", view=self)
 
 
 class Menu(commands.Cog):

@@ -366,3 +366,88 @@ async def test_migrates_adds_missing_user_columns(tmp_path):
     await db.clear_all_activity("111")
     if db.conn:
         await db.conn.close()
+
+
+# ── Переводы ──
+
+
+async def test_transfer_coins(db):
+    await db.update_user_balance("111", "alice", 500)
+    await db.update_user_balance("111", "bob", 100)
+    ok = await db.transfer_coins("111", "alice", "bob", 200)
+    assert ok is True
+    a = await db.get_or_create_user("111", "alice")
+    b = await db.get_or_create_user("111", "bob")
+    assert a["balance"] == 300
+    assert b["balance"] == 300
+    history = await db.get_transfer_history("111", "alice")
+    assert len(history) == 1
+    assert history[0]["from_user"] == "alice"
+
+
+async def test_transfer_coins_insufficient(db):
+    await db.update_user_balance("111", "alice", 50)
+    ok = await db.transfer_coins("111", "alice", "bob", 200)
+    assert ok is False
+
+
+async def test_transfer_coins_self(db):
+    ok = await db.transfer_coins("111", "alice", "alice", 100)
+    assert ok is False
+
+
+# ── Трейды ──
+
+
+async def _setup_cards_for_trade(db):
+    for uid in ("alice", "bob"):
+        await db.get_or_create_user("111", uid)
+    await db.conn.execute(
+        "INSERT INTO collectible_cards (guild_id, card_id, name, description, rarity, emoji, drop_rate, enabled) "
+        "VALUES ('111', 'dragon', 'Дракон', '', 'epic', '🟣', 0.1, 1)")
+    await db.conn.execute(
+        "INSERT INTO collectible_cards (guild_id, card_id, name, description, rarity, emoji, drop_rate, enabled) "
+        "VALUES ('111', 'phoenix', 'Феникс', '', 'rare', '🔵', 0.2, 1)")
+    await db.conn.execute(
+        "INSERT INTO user_cards (guild_id, user_id, card_id, quantity, obtained_at) VALUES ('111', 'alice', 'dragon', 3, ?)",
+        (datetime.now(timezone.utc).isoformat(),))
+    await db.conn.execute(
+        "INSERT INTO user_cards (guild_id, user_id, card_id, quantity, obtained_at) VALUES ('111', 'bob', 'phoenix', 2, ?)",
+        (datetime.now(timezone.utc).isoformat(),))
+    await db.conn.commit()
+
+
+async def test_trade_create_and_accept(db):
+    await _setup_cards_for_trade(db)
+    trade_id = await db.create_trade("111", "alice", "bob", "dragon", 1, "phoenix", 1)
+    assert trade_id is not None
+    ok, err = await db.accept_trade(trade_id)
+    assert ok is True
+    assert await db._user_card_quantity("111", "alice", "dragon") == 2
+    assert await db._user_card_quantity("111", "alice", "phoenix") == 1
+    assert await db._user_card_quantity("111", "bob", "phoenix") == 1
+    assert await db._user_card_quantity("111", "bob", "dragon") == 1
+
+
+async def test_trade_insufficient_cards(db):
+    await _setup_cards_for_trade(db)
+    trade_id = await db.create_trade("111", "alice", "bob", "dragon", 10, "phoenix", 1)
+    assert trade_id is None
+
+
+async def test_trade_cancel(db):
+    await _setup_cards_for_trade(db)
+    trade_id = await db.create_trade("111", "alice", "bob", "dragon", 1, "phoenix", 1)
+    ok = await db.cancel_trade(trade_id)
+    assert ok is True
+    _, err = await db.accept_trade(trade_id)
+    assert err is not None
+
+
+async def test_trade_accept_twice_fails(db):
+    await _setup_cards_for_trade(db)
+    trade_id = await db.create_trade("111", "alice", "bob", "dragon", 1, "phoenix", 1)
+    ok, _ = await db.accept_trade(trade_id)
+    assert ok is True
+    ok2, err = await db.accept_trade(trade_id)
+    assert ok2 is False

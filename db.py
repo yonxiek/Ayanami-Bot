@@ -389,8 +389,20 @@ class Database:
                 amount INTEGER,
                 timestamp TEXT
             )''',
+            '''CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                from_user TEXT,
+                to_user TEXT,
+                offer_card TEXT,
+                offer_amount INTEGER,
+                want_card TEXT,
+                want_amount INTEGER,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT
+            )''',
         ]
-        
+
         for table in tables:
             await self.conn.execute(table)
             
@@ -511,6 +523,67 @@ class Database:
             'WHERE guild_id = ? AND (from_user = ? OR to_user = ?) ORDER BY id DESC LIMIT ?',
             (guild_id, user_id, user_id, limit))
         return [dict(row) for row in await cursor.fetchall()]
+
+    async def create_trade(self, guild_id: str, from_user: str, to_user: str,
+                           offer_card: str, offer_amount: int, want_card: str, want_amount: int) -> int | None:
+        if offer_amount <= 0 or want_amount <= 0 or from_user == to_user:
+            return None
+        cursor = await self.conn.execute(
+            'SELECT quantity FROM user_cards WHERE guild_id = ? AND user_id = ? AND card_id = ?',
+            (guild_id, from_user, offer_card))
+        row = await cursor.fetchone()
+        if not row or row['quantity'] < offer_amount:
+            return None
+        cursor = await self.conn.execute(
+            'INSERT INTO trades (guild_id, from_user, to_user, offer_card, offer_amount, want_card, want_amount, status, created_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, \'pending\', ?)',
+            (guild_id, from_user, to_user, offer_card, offer_amount, want_card, want_amount,
+             datetime.now(timezone.utc).isoformat()))
+        await self.conn.commit()
+        return cursor.lastrowid
+
+    async def cancel_trade(self, trade_id: int) -> bool:
+        cursor = await self.conn.execute(
+            "UPDATE trades SET status = 'cancelled' WHERE id = ? AND status = 'pending'", (trade_id,))
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def accept_trade(self, trade_id: int) -> tuple[bool, str | None]:
+        cursor = await self.conn.execute(
+            "SELECT * FROM trades WHERE id = ? AND status = 'pending'", (trade_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return False, 'Трейд не найден или уже обработан.'
+        t = dict(row)
+        if await self._user_card_quantity(t['guild_id'], t['from_user'], t['offer_card']) < t['offer_amount']:
+            return False, 'У инициатора больше нет достаточного количества карточек.'
+        if await self._user_card_quantity(t['guild_id'], t['to_user'], t['want_card']) < t['want_amount']:
+            return False, 'У вас больше нет достаточного количества карточек.'
+        await self._swap_card(t['guild_id'], t['from_user'], t['to_user'], t['offer_card'], t['offer_amount'])
+        await self._swap_card(t['guild_id'], t['to_user'], t['from_user'], t['want_card'], t['want_amount'])
+        await self.conn.execute(
+            "UPDATE trades SET status = 'completed' WHERE id = ?", (trade_id,))
+        await self.conn.commit()
+        return True, None
+
+    async def _user_card_quantity(self, guild_id: str, user_id: str, card_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT quantity FROM user_cards WHERE guild_id = ? AND user_id = ? AND card_id = ?',
+            (guild_id, user_id, card_id))
+        row = await cursor.fetchone()
+        return row['quantity'] if row else 0
+
+    async def _swap_card(self, guild_id: str, src_user: str, dst_user: str, card_id: str, amount: int):
+        await self.conn.execute(
+            'UPDATE user_cards SET quantity = quantity - ? WHERE guild_id = ? AND user_id = ? AND card_id = ?',
+            (amount, guild_id, src_user, card_id))
+        await self.conn.execute(
+            'DELETE FROM user_cards WHERE guild_id = ? AND user_id = ? AND card_id = ? AND quantity <= 0',
+            (guild_id, src_user, card_id))
+        await self.conn.execute(
+            'INSERT INTO user_cards (guild_id, user_id, card_id, quantity, obtained_at) VALUES (?, ?, ?, ?, ?) '
+            'ON CONFLICT(guild_id, user_id, card_id) DO UPDATE SET quantity = quantity + ?',
+            (guild_id, dst_user, card_id, amount, datetime.now(timezone.utc).isoformat(), amount))
 
     async def increment_mod_stat(self, guild_id: str, moderator_id: str, action_type: str, amount: int = 1):
         await self.conn.execute('''
@@ -837,7 +910,7 @@ class Database:
             'temporary_roles', 'xp_boosts', 'reminders', 'achievements', 'duel_stats',
             'weekly_stats', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
             'user_cards', 'ai_moderation_log', 'server_events', 'cases', 'case_items',
-            'transfers'
+            'transfers', 'trades'
         ]
         for table in guild_tables:
             await self.conn.execute(f'DELETE FROM {table} WHERE guild_id = ?', (guild_id,))
