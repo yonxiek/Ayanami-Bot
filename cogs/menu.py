@@ -19,6 +19,7 @@ COLORS = {
     "Дни рождения": 0xf06292,
     "Задачи": 0x1abc9c,
     "Кошелёк": 0xf39c12,
+    "Приглашения": 0x00b8d9,
 }
 
 
@@ -577,6 +578,11 @@ class MenuView(discord.ui.View):
                 description="Переводы монет и история операций",
                 emoji="💰",
             ),
+            discord.SelectOption(
+                label="Приглашения",
+                description="Кто по вашей ссылке вступил на сервер",
+                emoji="🔗",
+            ),
         ],
     )
     async def select_callback(
@@ -593,6 +599,7 @@ class MenuView(discord.ui.View):
             "Дни рождения": "Сохрани дату рождения — в праздник Ayanami поздравит и выдаст роль.",
             "Задачи": "Веди личные задачи: создавай, отмечай выполненное и удаляй.",
             "Кошелёк": "Переводите монеты другим участникам и просматривайте историю переводов.",
+            "Приглашения": "Ayanami следит, кто вступил на сервер по вашей ссылке. Смотрите статистику и список приглашённых.",
         }[category]
         embed = discord.Embed(title=category, description=desc, color=COLORS[category])
         embed.set_footer(text="Выберите действие ниже")
@@ -644,6 +651,9 @@ class CategoryView(discord.ui.View):
         elif category == "Кошелёк":
             self._add_btn("Перевод", "💸", discord.ButtonStyle.success, self._wallet_transfer)
             self._add_btn("История", "📋", discord.ButtonStyle.secondary, self._wallet_history)
+        elif category == "Приглашения":
+            self._add_btn("Моя статистика", "📊", discord.ButtonStyle.primary, self._invite_stats)
+            self._add_btn("Кого пригласил", "📋", discord.ButtonStyle.secondary, self._invite_list)
 
         back = discord.ui.Button(
             label="Назад", emoji="◀️", style=discord.ButtonStyle.grey, row=4
@@ -868,6 +878,53 @@ class CategoryView(discord.ui.View):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    # ── Invites ──
+    async def _invite_stats(self, interaction: discord.Interaction):
+        db = Database()
+        count = await db.count_invites(str(interaction.guild.id), str(interaction.user.id))
+        invites = await db.get_user_invites(str(interaction.guild.id), str(interaction.user.id), limit=25)
+        embed = discord.Embed(
+            title="🔗 Приглашения — статистика",
+            description=f"Вы пригласили: **{count}** участников.",
+            color=0x00b8d9,
+        )
+        if invites:
+            lines = []
+            for inv in invites:
+                joined = inv["joined_at"]
+                ts = ""
+                try:
+                    ts = f" • <t:{int(datetime.fromisoformat(joined).timestamp())}:R>"
+                except Exception:
+                    pass
+                lines.append(f"• <@{inv['invitee_id']}>{ts}")
+            embed.add_field(name="Последние приглашённые", value="\n".join(lines[:10]), inline=False)
+        embed.set_footer(text="Информация собирается с момента запуска бота")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def _invite_list(self, interaction: discord.Interaction):
+        db = Database()
+        invites = await db.get_user_invites(str(interaction.guild.id), str(interaction.user.id), limit=50)
+        if not invites:
+            return await interaction.response.send_message("📭 Вы ещё никого не приглашали.", ephemeral=True)
+        lines = []
+        for inv in invites:
+            joined = inv["joined_at"]
+            ts = ""
+            try:
+                ts = f" — {discord.utils.format_dt(datetime.fromisoformat(joined), style='d')}"
+            except Exception:
+                pass
+            lines.append(f"• <@{inv['invitee_id']}>{ts}")
+        embed = discord.Embed(
+            title="🔗 Кого вы пригласили",
+            description="\n".join(lines[:25]),
+            color=0x00b8d9,
+        )
+        if len(lines) > 25:
+            embed.set_footer(text=f"… и ещё {len(lines) - 25} — полный список в базе")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 class TradeAcceptView(discord.ui.View):
     def __init__(self, trade_id: int, initiator: discord.Member, recipient: discord.Member):
@@ -909,7 +966,7 @@ class Menu(commands.Cog):
 
     @app_commands.command(
         name="menu",
-        description="Меню функций — голосования, события, карточки, кланы, GitHub, напоминания, дни рождения, задачи",
+        description="Меню функций — голосования, события, карточки, кланы, GitHub, напоминания, дни рождения, задачи, приглашения",
     )
     async def menu(self, interaction: discord.Interaction):
         embed = discord.Embed(

@@ -479,3 +479,16 @@ async def test_export_and_restore_settings(db):
 async def test_restore_settings_bad_data(db):
     count = await db.restore_settings("111", {"config": None, "shop_items": "x"})
     assert count == 0
+
+
+async def test_record_and_count_invites(db):
+    await db.record_invite("111", "alice", "bob", "abc")
+    await db.record_invite("111", "alice", "carol", "abc")
+    await db.record_invite("111", "dave", "erin", "def")
+    assert await db.count_invites("111", "alice") == 2
+    assert await db.count_invites("111", "dave") == 1
+    assert await db.count_invites("111", "nobody") == 0
+    invites = await db.get_user_invites("111", "alice")
+    assert len(invites) == 2
+    assert invites[0]["invitee_id"] == "carol"
+    assert invites[0]["code"] == "abc"

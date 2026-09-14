@@ -410,6 +410,14 @@ class Database:
                 status TEXT DEFAULT 'pending',
                 created_at TEXT
             )''',
+            '''CREATE TABLE IF NOT EXISTS invites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                inviter_id TEXT,
+                invitee_id TEXT,
+                code TEXT,
+                joined_at TEXT
+            )''',
         ]
 
         for table in tables:
@@ -922,7 +930,7 @@ class Database:
             'temporary_roles', 'xp_boosts', 'reminders', 'achievements', 'duel_stats',
             'weekly_stats', 'daily_activity', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
             'user_cards', 'ai_moderation_log', 'server_events', 'cases', 'case_items',
-            'transfers', 'trades'
+            'transfers', 'trades', 'invites'
         ]
         for table in guild_tables:
             await self.conn.execute(f'DELETE FROM {table} WHERE guild_id = ?', (guild_id,))
@@ -1634,6 +1642,25 @@ class Database:
             restored += 1
         await self.conn.commit()
         return restored
+
+    async def record_invite(self, guild_id: str, inviter_id: str, invitee_id: str, code: str):
+        from datetime import datetime, timezone
+        await self.conn.execute(
+            'INSERT INTO invites (guild_id, inviter_id, invitee_id, code, joined_at) VALUES (?, ?, ?, ?, ?)',
+            (guild_id, inviter_id, invitee_id, code, datetime.now(timezone.utc).isoformat()))
+        await self.conn.commit()
+
+    async def count_invites(self, guild_id: str, user_id: str) -> int:
+        cursor = await self.conn.execute(
+            'SELECT COUNT(*) FROM invites WHERE guild_id = ? AND inviter_id = ?', (guild_id, user_id))
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+    async def get_user_invites(self, guild_id: str, user_id: str, limit: int = 25) -> list:
+        cursor = await self.conn.execute(
+            'SELECT invitee_id, code, joined_at FROM invites '
+            'WHERE guild_id = ? AND inviter_id = ? ORDER BY id DESC LIMIT ?', (guild_id, user_id, limit))
+        return [dict(r) for r in await cursor.fetchall()]
 
     # ==========================================
     #     НОВЫЕ МОДУЛИ: тикеты, карточки
