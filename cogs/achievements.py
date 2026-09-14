@@ -36,8 +36,6 @@ ACHIEVEMENTS = {
     # --- Кейсы ---
     "case_open_1": ("🎁", "Первое открытие", "Откройте свой первый кейс"),
     "case_open_10": ("📦", "Кейс-мастер", "Откройте 10 кейсов"),
-    # --- Рейды ---
-    "raid_5": ("🛡️", "Защитник", "Примите участие в 5 рейдах"),
     # --- Кланы ---
     "clan_create": ("🚩", "Основатель", "Создайте свой клан"),
     "clan_join": ("🤝", "Клановец", "Вступите в клан"),
@@ -58,7 +56,6 @@ CATEGORIES = {
     "📩 Тикеты": ["first_ticket", "tickets_5"],
     "🃏 Карточки": ["first_card", "cards_10", "legendary_card"],
     "🎁 Кейсы": ["case_open_1", "case_open_10"],
-    "🛡️ Рейды": ["raid_5"],
     "🚩 Кланы": ["clan_create", "clan_join"],
     "🗳️ Голосования": ["first_poll", "poll_vote"],
     "🎉 События": ["first_event", "event_rsvp"],
@@ -115,7 +112,6 @@ async def check_all_achievements(db: Database, guild_id: str, user_id: str, memb
     total_voice = user.get("total_voice_minutes", 0)
     level = user.get("level", 1)
     balance = user.get("balance", 0)
-    raids = user.get("raids_attended", 0)
 
     checks = [
         (total_msgs >= 1, "first_message"),
@@ -128,7 +124,6 @@ async def check_all_achievements(db: Database, guild_id: str, user_id: str, memb
         (level >= 20, "level_20"),
         (balance >= 1000, "rich_1000"),
         (balance >= 10000, "rich_10000"),
-        (raids >= 5, "raid_5"),
     ]
 
     try:

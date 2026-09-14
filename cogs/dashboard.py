@@ -78,7 +78,6 @@ class DashboardView(discord.ui.LayoutView):
 
         options = [
             discord.SelectOption(label="Основные настройки", value="general", emoji="⚙️", description="Настройки сервера, бустер-бонус, модули"),
-            discord.SelectOption(label="Рейды", value="raids", emoji="⚔️", description="Роли и каналы для организации рейдов"),
             discord.SelectOption(label="Логирование", value="logging", emoji="📋", description="Канал логов и отслеживаемые события"),
             discord.SelectOption(label="Приветствия", value="greetings", emoji="👋", description="Привет, прощание, буст и автороли"),
             discord.SelectOption(label="Ответы бота", value="reactions", emoji="💬", description="Авто-ответы на определённые слова"),
@@ -126,7 +125,6 @@ class DashboardView(discord.ui.LayoutView):
 
         view_map = {
             "general": lambda: SetupAdminView(self.cog, db, self.guild_id),
-            "raids": lambda: SetupRaidView(self.cog, db, self.guild_id),
             "logging": lambda: SetupLoggingView(self.cog, db, self.guild_id),
             "greetings": lambda: SetupGreetingsView(self.cog, db, self.guild_id),
             "reactions": lambda: SetupResponsesView(self.cog, db, self.guild_id),
@@ -241,7 +239,7 @@ class SetupAdminView(discord.ui.View):
                 parts.append(r.mention if r else f"`{rid}`")
             return ", ".join(parts) + (f" +{len(ids)-10}" if len(ids) > 10 else "")
 
-        mod_names = {"levels": "Уровни", "quests": "Квесты", "shop": "Магазин", "raids": "Рейды", "automod": "Автомод", "logging": "Логи"}
+        mod_names = {"levels": "Уровни", "quests": "Квесты", "shop": "Магазин", "automod": "Автомод", "logging": "Логи"}
         enabled = [mod_names.get(m, m) for m, v in modules.items() if v]
         disabled = [mod_names.get(m, m) for m, v in modules.items() if not v]
 
@@ -316,12 +314,11 @@ class SetupAdminView(discord.ui.View):
     @discord.ui.select(
         cls=discord.ui.Select,
         placeholder="Включить/выключить модули",
-        min_values=0, max_values=6,
+        min_values=0, max_values=5,
         options=[
             discord.SelectOption(label="Система уровней", value="levels", emoji="📊", description="Начисление XP и уровни"),
             discord.SelectOption(label="Квесты", value="quests", emoji="📜", description="Ежедневные квесты"),
             discord.SelectOption(label="Магазин", value="shop", emoji="🛒", description="Магазин товаров"),
-            discord.SelectOption(label="Рейды", value="raids", emoji="⚔️", description="Организация рейдов"),
             discord.SelectOption(label="Авто-модерация", value="automod", emoji="🤖", description="Анти-спам и фильтры"),
             discord.SelectOption(label="Логирование", value="logging", emoji="📋", description="Логи действий"),
         ],
@@ -331,7 +328,7 @@ class SetupAdminView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         config = await self.db.get_guild_config(str(self.guild_id))
         modules = config.get("modules", {})
-        all_modules = ["levels", "quests", "shop", "raids", "automod", "logging"]
+        all_modules = ["levels", "quests", "shop", "automod", "logging"]
         for m in all_modules:
             modules[m] = m in select.values
         await self.db.update_config_field(str(self.guild_id), "modules", modules)
@@ -681,57 +678,6 @@ class SetupChatView(discord.ui.View):
         embed = discord.Embed(title="🗣️ Чат с ИИ", description="\n".join(lines), color=Colors.MAIN)
         embed.set_footer(text="Ayanami System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-# ==========================================
-#   РЕЙДЫ
-# ==========================================
-
-class SetupRaidView(discord.ui.View):
-    def __init__(self, cog, db: Database, guild_id: int):
-        super().__init__(timeout=300)
-        self.cog = cog
-        self.db = db
-        self.guild_id = guild_id
-        self.ping_role = None
-        self.line_channel = None
-        self.add_item(BackButton())
-
-    @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=2)
-    async def btn_settings_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        config = await self.db.get_guild_config(str(self.guild_id))
-        ping_role_id = config.get("raid_ping_role_id")
-        line_ch_id = config.get("raid_line_channel_id")
-        ping_role = interaction.guild.get_role(int(ping_role_id)) if ping_role_id else None
-
-        lines = [
-            "### Рейды",
-            f"**Роль для пинга:** {ping_role.mention if ping_role else 'Не задана'}",
-            f"**Канал для лайнов:** {f'<#{line_ch_id}>' if line_ch_id else 'Не задан'}",
-            "\n*Выберите роль и канал, затем нажмите «Сохранить».*",
-        ]
-        embed = discord.Embed(title="⚔️ Рейды — настройки", description="\n".join(lines), color=Colors.MAIN)
-        embed.set_footer(text="Ayanami System")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="1. Роль для пинга", max_values=1, row=0)
-    async def select_role(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
-        self.ping_role = select.values[0]
-        await interaction.response.defer()
-
-    @discord.ui.select(cls=discord.ui.ChannelSelect, channel_types=[discord.ChannelType.text], placeholder="2. Канал для лайнов", max_values=1, row=1)
-    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
-        self.line_channel = select.values[0]
-        await interaction.response.defer()
-
-    @discord.ui.button(label="Сохранить", style=discord.ButtonStyle.success, row=2)
-    async def save_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.ping_role or not self.line_channel:
-            return await interaction.response.send_message("❌ Выберите и роль, и канал!", ephemeral=True)
-        await interaction.response.defer()
-        await self.db.update_config_field(str(self.guild_id), "raid_ping_role_id", self.ping_role.id)
-        await self.db.update_config_field(str(self.guild_id), "raid_line_channel_id", self.line_channel.id)
-        await interaction.followup.send("✅ Настройки рейдов сохранены!", ephemeral=True)
 
 
 # ==========================================
