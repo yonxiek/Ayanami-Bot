@@ -53,7 +53,7 @@ def render_activity_chart(week_keys: list[str], series: dict[str, list[int]], di
         "voice_minutes": (155, 89, 182),
         "commands": (230, 126, 34),
     }
-    labels = {"messages": "Сообщения", "voice_minutes": "Голос (мин)", "commands": "Команды"}
+    labels = {"messages": "Сообщения", "voice_minutes": "Голос (мин ÷ 10)", "commands": "Команды"}
 
     draw.text((24, 16), f"Активность за {len(week_keys)} недель — {display_name}",
               font=title_font, fill=(245, 245, 245))
@@ -152,12 +152,13 @@ def render_dow_chart(dow: list[int], display_name: str):
 
 
 class StatsView(discord.ui.View):
-    def __init__(self, keys, series, dow, display_name, summary, member_flag, avatar_url, guild_icon, user_id):
+    def __init__(self, keys, series, dow, display_name, mention, summary, member_flag, avatar_url, guild_icon, user_id):
         super().__init__(timeout=180)
         self.keys = keys
         self.series = series
         self.dow = dow
         self.display_name = display_name
+        self.mention = mention
         self.summary = summary
         self.member_flag = member_flag
         self.avatar_url = avatar_url
@@ -167,13 +168,18 @@ class StatsView(discord.ui.View):
 
     def build(self):
         if self.mode == "weekly":
-            img = render_activity_chart(self.keys, self.series, self.display_name)
-            title = f"📊 Активность: {self.display_name}"
+            display_series = {
+                "messages": self.series["messages"],
+                "voice_minutes": [v // 10 for v in self.series["voice_minutes"]],
+                "commands": self.series["commands"],
+            }
+            img = render_activity_chart(self.keys, display_series, self.display_name)
+            title = f"📊 Активность: {self.mention}"
             desc = None
         else:
             img = render_dow_chart(self.dow, self.display_name)
-            title = f"📆 Дни недели: {self.display_name}"
-            desc = "Усреднённая активность за последние 28 дней (сообщения + голос/10 + команды)."
+            title = f"📆 Дни недели: {self.mention}"
+            desc = "Усреднённая активность за 28 дней (сообщения + голос ÷ 10 + команды)."
         embed = discord.Embed(title=title, description=desc, color=Colors.MAIN)
         if self.guild_icon:
             embed.set_thumbnail(url=self.guild_icon)
@@ -183,8 +189,8 @@ class StatsView(discord.ui.View):
             embed.add_field(name="ℹ️", value="Данных пока нет — статистика копится с этого дня.", inline=False)
         embed.set_image(url="attachment://stats.png")
         embed.set_footer(text=f"ID: {self.user_id}")
-        embed.set_author(name="Статистика участника" if self.member_flag else "Ваша статистика",
-                         icon_url=self.avatar_url)
+        author_name = f"Статистика: {self.mention}" if self.member_flag else f"Ваша статистика — {self.mention}"
+        embed.set_author(name=author_name, icon_url=self.avatar_url)
         return img, embed
 
     @discord.ui.button(label="Недели", emoji="📅", style=discord.ButtonStyle.primary, row=0)
@@ -202,7 +208,9 @@ class StatsView(discord.ui.View):
         buf = io.BytesIO()
         img.save(buf, "PNG")
         buf.seek(0)
-        await interaction.response.edit_message(embed=embed, view=self, file=discord.File(buf, filename="stats.png"))
+        await interaction.response.edit_message(
+            embed=embed, view=self, attachments=[discord.File(buf, filename="stats.png")]
+        )
 
 
 class WeeklyStats(VoiceTrackerMixin, commands.Cog):
@@ -312,8 +320,10 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             summary.append(("⭐ Репутация", str(urow["reputation"])))
 
         view = StatsView(
-            keys=keys, series=series, dow=dow, display_name=target.display_name,
-            summary=summary, member_flag=bool(member), avatar_url=target.display_avatar.url,
+            keys=keys, series=series, dow=dow,
+            display_name=f"@{target.display_name}", mention=target.mention,
+            summary=summary, member_flag=bool(member),
+            avatar_url=target.display_avatar.url,
             guild_icon=interaction.guild.icon.url if interaction.guild.icon else None,
             user_id=str(target.id),
         )
