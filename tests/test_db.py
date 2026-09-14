@@ -451,3 +451,31 @@ async def test_trade_accept_twice_fails(db):
     assert ok is True
     ok2, err = await db.accept_trade(trade_id)
     assert ok2 is False
+
+
+async def test_export_and_restore_settings(db):
+    await db.update_config_field("111", "currency_name", "кредит")
+    await db.conn.execute(
+        "INSERT INTO collectible_cards (guild_id, card_id, name, description, rarity, emoji, drop_rate, enabled) "
+        "VALUES ('111', 'c1', 'Тест', '', 'epic', '🟣', 0.1, 1)")
+    await db.conn.execute(
+        "INSERT INTO level_roles (guild_id, level, role_id) VALUES ('111', 5, 'r5')")
+    await db.conn.commit()
+
+    data = await db.export_settings("111")
+    assert data["config"].get("currency_name") == "кредит"
+    assert len(data["cards"]) == 1
+
+    count = await db.restore_settings("999", data)
+    assert count >= 3
+    restored_config = await db.get_guild_config("999")
+    assert restored_config.get("currency_name") == "кредит"
+    cursor = await db.conn.execute(
+        "SELECT COUNT(*) FROM collectible_cards WHERE guild_id = '999'")
+    row = await cursor.fetchone()
+    assert row[0] == 1
+
+
+async def test_restore_settings_bad_data(db):
+    count = await db.restore_settings("111", {"config": None, "shop_items": "x"})
+    assert count == 0

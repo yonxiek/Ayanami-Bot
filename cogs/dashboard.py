@@ -1,4 +1,5 @@
 import json as _json
+import io
 from datetime import datetime, timezone
 
 import aiohttp
@@ -102,7 +103,7 @@ class DashboardView(discord.ui.LayoutView):
         ]
         extra_options = [
             discord.SelectOption(label="Вебхуки", value="webhooks", emoji="🪝", description="Создание, редактор и отправка вебхуков"),
-            discord.SelectOption(label="Данные", value="data", emoji="🗑️", description="Очистка данных: активность, квесты, полный сброс бота"),
+            discord.SelectOption(label="Данные", value="data", emoji="🗑️", description="Очистка данных и бэкап настроек сервера"),
             discord.SelectOption(label="Права команд", value="perms", emoji="🔒", description="Доступ к командам по ролям"),
             discord.SelectOption(label="Лотерея", value="lottery", emoji="🎟", description="Запуск и управление лотереей"),
             discord.SelectOption(label="Интеграции", value="integrations", emoji="🔌", description="API-ключи: погода и статусы провайдеров ИИ"),
@@ -2637,6 +2638,22 @@ class SetupDataView(discord.ui.View):
         embed.set_footer(text="Опасные операции требуют подтверждения")
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+    @discord.ui.button(label="Экспорт настроек", emoji="📤", style=discord.ButtonStyle.blurple, row=1)
+    async def btn_export(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        data = await self.db.export_settings(str(self.guild_id))
+        payload = _json.dumps(data, ensure_ascii=False, indent=2)
+        filename = f"settings-{self.guild_id}.json"
+        await interaction.followup.send(
+            "📤 Бэкап настроек (конфиг, магазин, карточки, роли за уровни):",
+            file=discord.File(io.BytesIO(payload.encode("utf-8")), filename=filename),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Импорт настроек", emoji="📥", style=discord.ButtonStyle.blurple, row=1)
+    async def btn_import(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DataImportModal())
+
 
 class DataClearView(discord.ui.View):
     def __init__(self, cog, db: Database, guild_id: int):
@@ -4037,6 +4054,32 @@ class TicketCategoryModal(discord.ui.Modal, title="Категория тикет
             self.description.value or "",
             cat_id,
         )
+
+
+class DataImportModal(discord.ui.Modal, title="📥 Импорт настроек"):
+    payload = discord.ui.TextInput(
+        label="JSON-бэкап",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=15000,
+        placeholder='{"config": {...}}',
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            data = _json.loads(self.payload.value)
+        except Exception:
+            return await interaction.followup.send("❌ Неверный JSON.", ephemeral=True)
+        if not isinstance(data, dict) or "config" not in data:
+            return await interaction.followup.send("❌ Это не похоже на файл бэкапа (нужен ключ `config`).", ephemeral=True)
+        db = Database()
+        restored = await db.restore_settings(str(interaction.guild.id), data)
+        await log_settings_change(
+            interaction, "Данные",
+            f"**Действие:** импорт настроек\n**Восстановлено элементов:** {restored}"
+        )
+        await interaction.followup.send(f"✅ Импортировано элементов: **{restored}**.", ephemeral=True)
 
 
 class TicketAutoCloseModal(discord.ui.Modal, title="⏱️ Авто-закрытие тикетов"):

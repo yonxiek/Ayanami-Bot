@@ -1570,6 +1570,72 @@ class Database:
         await self.conn.commit()
 
     # ==========================================
+    #     БЭКАП НАСТРОЕК (экспорт/импорт)
+    # ==========================================
+
+    async def export_settings(self, guild_id: str) -> dict:
+        config = await self.get_guild_config(guild_id)
+        shop = []
+        cursor = await self.conn.execute(
+            'SELECT item_id, name, description, price, item_type, role_id, metadata, stock, enabled '
+            'FROM shop_items WHERE guild_id = ? ORDER BY item_id', (guild_id,))
+        for r in await cursor.fetchall():
+            shop.append(dict(r))
+        cards = []
+        cursor = await self.conn.execute(
+            'SELECT card_id, name, description, rarity, emoji, image_url, drop_rate, enabled '
+            'FROM collectible_cards WHERE guild_id = ? ORDER BY card_id', (guild_id,))
+        for r in await cursor.fetchall():
+            cards.append(dict(r))
+        level_roles = []
+        cursor = await self.conn.execute(
+            'SELECT level, role_id FROM level_roles WHERE guild_id = ? ORDER BY level', (guild_id,))
+        for r in await cursor.fetchall():
+            level_roles.append(dict(r))
+        return {"config": config, "shop_items": shop, "cards": cards, "level_roles": level_roles}
+
+    async def restore_settings(self, guild_id: str, data: dict) -> int:
+        restored = 0
+        config = data.get("config")
+        if isinstance(config, dict) and config:
+            await self.conn.execute(
+                'INSERT OR REPLACE INTO guild_config (guild_id, config) VALUES (?, ?)',
+                (guild_id, json.dumps(config, ensure_ascii=False)))
+            await self.conn.commit()
+            restored += 1
+        for item in data.get("shop_items", []):
+            if not isinstance(item, dict) or not item.get("item_id"):
+                continue
+            await self.conn.execute(
+                'INSERT OR REPLACE INTO shop_items '
+                '(guild_id, item_id, name, description, price, item_type, role_id, metadata, stock, enabled) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (guild_id, item.get("item_id"), item.get("name", ""), item.get("description", ""),
+                 item.get("price", 0), item.get("item_type", "role"), item.get("role_id"),
+                 item.get("metadata", "{}"), item.get("stock", -1), item.get("enabled", 1)))
+            restored += 1
+        for card in data.get("cards", []):
+            if not isinstance(card, dict) or not card.get("card_id"):
+                continue
+            await self.conn.execute(
+                'INSERT OR REPLACE INTO collectible_cards '
+                '(guild_id, card_id, name, description, rarity, emoji, image_url, drop_rate, enabled) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (guild_id, card.get("card_id"), card.get("name", ""), card.get("description", ""),
+                 card.get("rarity", "common"), card.get("emoji", "🃏"), card.get("image_url"),
+                 card.get("drop_rate", 0.1), card.get("enabled", 1)))
+            restored += 1
+        for lr in data.get("level_roles", []):
+            if not isinstance(lr, dict) or lr.get("level") is None:
+                continue
+            await self.conn.execute(
+                'INSERT OR REPLACE INTO level_roles (guild_id, level, role_id) VALUES (?, ?, ?)',
+                (guild_id, lr.get("level"), lr.get("role_id")))
+            restored += 1
+        await self.conn.commit()
+        return restored
+
+    # ==========================================
     #     НОВЫЕ МОДУЛИ: тикеты, карточки
     # ==========================================
 
