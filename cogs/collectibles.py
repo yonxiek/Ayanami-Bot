@@ -124,7 +124,7 @@ class Collectibles(commands.Cog):
         )
         rows = await cursor.fetchall()
         if not rows:
-            return await interaction.response.send_message(f"📭 У {target.name} нет карточек.", ephemeral=True)
+            return await interaction.response.send_message(f"📭 У {target.mention} нет карточек.", ephemeral=True)
 
         lines = []
         total = 0
@@ -134,13 +134,15 @@ class Collectibles(commands.Cog):
             total += r["quantity"]
 
         embed = discord.Embed(
-            title=f"🃏 Коллекция {target.name}",
+            title=f"🃏 Коллекция {target.mention}",
             description="\n".join(lines[:25]),
             color=Colors.MAIN,
         )
         embed.set_footer(text=f"Всего: {total} карточек")
         embed.set_thumbnail(url=target.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=embed, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     async def card_give(self, interaction: discord.Interaction, member: discord.Member, card_id: str, amount: int = 1):
         if member.id == interaction.user.id:

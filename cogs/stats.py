@@ -1,12 +1,9 @@
 import asyncio
-import io
-import os
 from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageFont
 
 from db import Database
 from ui_components import Colors
@@ -28,170 +25,110 @@ def last_week_keys(n: int = 8) -> list[str]:
     return keys
 
 
-def _load_font(size: int, bold: bool = False):
-    path = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
-            else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    try:
-        return ImageFont.load_default(size=size)
-    except TypeError:
-        return ImageFont.load_default()
+_SPARK = "▁▂▃▄▅▆▇█"
+_BAR_FULL = "█"
+_BAR_EMPTY = "░"
 
 
-def render_activity_chart(week_keys: list[str], series: dict[str, list[int]], display_name: str):
-    W, H = 900, 430
-    img = Image.new("RGB", (W, H), (43, 45, 49))
-    draw = ImageDraw.Draw(img)
-
-    title_font = _load_font(26, bold=True)
-    small_font = _load_font(14)
-    legend_font = _load_font(18)
-
-    colors = {
-        "messages": (43, 108, 176),
-        "voice_minutes": (155, 89, 182),
-        "commands": (230, 126, 34),
-    }
-    labels = {"messages": "Сообщения", "voice_minutes": "Голос (мин ÷ 10)", "commands": "Команды"}
-
-    draw.text((24, 16), f"Активность за {len(week_keys)} недель — {display_name}",
-              font=title_font, fill=(245, 245, 245))
-
-    x = W - 280
-    for key, col in colors.items():
-        draw.rectangle([x, 14, x + 16, 30], fill=col)
-        draw.text((x + 22, 12), labels[key], font=legend_font, fill=(220, 220, 220))
-        x += 16 + draw.textlength(labels[key], font=legend_font) + 24
-
-    left, top, right, bottom = 70, 70, W - 30, H - 55
-    max_val = 0
-    for vals in series.values():
-        max_val = max(max_val, *(vals or [0]))
-    max_val = max(1, max_val)
-
-    for step_frac in (0, 0.25, 0.5, 0.75, 1.0):
-        y = bottom - step_frac * (bottom - top)
-        draw.line([left, y, right, y], fill=(60, 62, 68))
-        val = int(round(step_frac * max_val))
-        draw.text((12, y - 8), str(val), font=small_font, fill=(160, 160, 160))
-
-    group_width = (right - left) / len(week_keys)
-    bar_width = 18
-    gap = 6
-    total = 3 * bar_width + 2 * gap
-
-    for i, key in enumerate(week_keys):
-        cx = left + group_width * i + group_width / 2
-        wk = key.split("-W", 1)[-1]
-        draw.text((cx, bottom + 8), f"W{wk}", font=small_font, fill=(200, 200, 200), anchor="mm")
-
-        for j, (metric, vals) in enumerate(series.items()):
-            v = vals[i]
-            bar_h = (v / max_val) * (bottom - top)
-            if bar_h < 2 and v > 0:
-                bar_h = 2
-            bx = cx - total / 2 + j * (bar_width + gap)
-            draw.rounded_rectangle([bx, bottom - bar_h, bx + bar_width, bottom],
-                                   radius=4, fill=colors[metric])
-            if v > 0:
-                label = str(v)
-                tw = draw.textlength(label, font=small_font)
-                if bar_h > 18:
-                    draw.text((bx + bar_width / 2 - tw / 2, bottom - bar_h + 3), label,
-                              font=small_font, fill=(245, 245, 245))
-                else:
-                    draw.text((bx + bar_width / 2 - tw / 2, bottom - bar_h - 16), label,
-                              font=small_font, fill=(220, 220, 220))
-
-    return img
+def sparkline(values: list[int]) -> str:
+    """Мини-график тренда: 8 символов ▁▂▃▄▅▆▇█ (нормировка по максимуму серии)."""
+    if not values:
+        return ""
+    mx = max(values)
+    if mx <= 0:
+        return _SPARK[0] * len(values)
+    return "".join(_SPARK[min(len(_SPARK) - 1, int((v / mx) * (len(_SPARK) - 1)))] for v in values)
 
 
-def render_dow_chart(dow: list[int], display_name: str):
-    labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-    W, H = 900, 430
-    img = Image.new("RGB", (W, H), (43, 45, 49))
-    draw = ImageDraw.Draw(img)
+def hbar(value: int, max_val: int) -> str:
+    """Горизонтальная полоска из 10 сегментов.""" ""
+    if max_val <= 0:
+        return _BAR_EMPTY * 10
+    filled = round((value / max_val) * 10)
+    return _BAR_FULL * filled + _BAR_EMPTY * (10 - filled)
 
-    title_font = _load_font(26, bold=True)
-    small_font = _load_font(14)
-    legend_font = _load_font(18)
 
-    draw.text((24, 16), f"Активность по дням недели (28 дн.) — {display_name}",
-              font=title_font, fill=(245, 245, 245))
-    draw.rectangle([W - 250, 14, W - 234, 30], fill=(43, 108, 176))
-    draw.text((W - 228, 12), "Сообщения + голос + команды", font=legend_font, fill=(220, 220, 220))
+def fmt_voice(minutes: int) -> str:
+    minutes = max(0, int(minutes))
+    if minutes < 60:
+        return f"{minutes} мин"
+    h, m = divmod(minutes, 60)
+    return f"{h} ч {m} мин"
 
-    left, top, right, bottom = 70, 80, W - 40, H - 55
-    max_val = max(1, max(dow))
 
-    for step_frac in (0, 0.25, 0.5, 0.75, 1.0):
-        y = bottom - step_frac * (bottom - top)
-        draw.line([left, y, right, y], fill=(60, 62, 68))
-        val = int(round(step_frac * max_val))
-        draw.text((12, y - 8), str(val), font=small_font, fill=(160, 160, 160))
-
-    bar_width = 72
-    gap = (right - left - 7 * bar_width) / 6
-    for i, v in enumerate(dow):
-        bar_h = (v / max_val) * (bottom - top)
-        if bar_h < 2 and v > 0:
-            bar_h = 2
-        bx = left + i * (bar_width + gap)
-        draw.rounded_rectangle([bx, bottom - bar_h, bx + bar_width, bottom],
-                               radius=6, fill=(43, 108, 176))
-        draw.text((bx + bar_width / 2, bottom + 8), labels[i], font=small_font,
-                  fill=(200, 200, 200), anchor="mm")
-        if v > 0:
-            label = str(v)
-            tw = draw.textlength(label, font=small_font)
-            draw.text((bx + bar_width / 2 - tw / 2, bottom - bar_h - 18), label,
-                      font=small_font, fill=(220, 220, 220))
-
-    return img
+def fmt_num(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
 
 
 class StatsView(discord.ui.View):
-    def __init__(self, keys, series, dow, display_name, mention, summary, member_flag, avatar_url, guild_icon, user_id):
+    def __init__(self, keys, series, dow, mention, extra_fields, avatar_url, guild_icon, user_id, member_flag):
         super().__init__(timeout=180)
         self.keys = keys
         self.series = series
         self.dow = dow
-        self.display_name = display_name
         self.mention = mention
-        self.summary = summary
-        self.member_flag = member_flag
+        self.extra_fields = extra_fields
         self.avatar_url = avatar_url
         self.guild_icon = guild_icon
         self.user_id = user_id
+        self.member_flag = member_flag
         self.mode = "weekly"
 
     def build(self):
-        if self.mode == "weekly":
-            display_series = {
-                "messages": self.series["messages"],
-                "voice_minutes": [v // 10 for v in self.series["voice_minutes"]],
-                "commands": self.series["commands"],
-            }
-            img = render_activity_chart(self.keys, display_series, self.display_name)
-            title = f"📊 Активность: {self.mention}"
-            desc = None
-        else:
-            img = render_dow_chart(self.dow, self.display_name)
-            title = f"📆 Дни недели: {self.mention}"
-            desc = "Усреднённая активность за 28 дней (сообщения + голос ÷ 10 + команды)."
-        embed = discord.Embed(title=title, description=desc, color=Colors.MAIN)
+        embed = discord.Embed(color=Colors.MAIN)
         if self.guild_icon:
             embed.set_thumbnail(url=self.guild_icon)
-        for label, value in self.summary[:3]:
-            embed.add_field(name=label, value=value, inline=True)
-        if desc and sum(self.dow) == 0:
-            embed.add_field(name="ℹ️", value="Данных пока нет — статистика копится с этого дня.", inline=False)
-        embed.set_image(url="attachment://stats.png")
         embed.set_footer(text=f"ID: {self.user_id}")
-        author_name = f"Статистика: {self.mention}" if self.member_flag else f"Ваша статистика — {self.mention}"
-        embed.set_author(name=author_name, icon_url=self.avatar_url)
-        return img, embed
+        embed.set_author(
+            name="Статистика участника" if self.member_flag else "Ваша статистика",
+            icon_url=self.avatar_url,
+        )
+
+        messages = self.series["messages"]
+        voice = self.series["voice_minutes"]
+        commands = self.series["commands"]
+
+        if self.mode == "weekly":
+            embed.title = f"📊 Активность: {self.mention}"
+            weeks = " · ".join(f"`W{self.keys[-i].split('-W', 1)[-1]}`" for i in range(len(self.keys), 0, -1))
+            embed.description = f"Последние **{len(self.keys)} недель**\n{weeks}"
+            embed.add_field(name="💬 Сообщения", value=fmt_num(sum(messages)), inline=True)
+            embed.add_field(name="🎙 Голос (мин)", value=fmt_voice(sum(voice)), inline=True)
+            embed.add_field(name="⌨️ Команды", value=fmt_num(sum(commands)), inline=True)
+            if sum(messages + voice + commands) == 0:
+                embed.add_field(
+                    name="ℹ️",
+                    value="Данных пока нет — статистика копится с этого дня.",
+                    inline=False,
+                )
+            else:
+                lines = [
+                    f"`{sparkline(messages)}`  **💬** соообщений",
+                    f"`{sparkline(voice)}`  **🎙** минут в голосе",
+                    f"`{sparkline(commands)}`  **⌨️** команд",
+                ]
+                embed.add_field(name="📈 Динамика по неделям", value="\n".join(lines), inline=False)
+        else:
+            embed.title = f"📆 Дни недели: {self.mention}"
+            embed.description = "Активность за **28 дней**: сообщения + голос ÷ 10 + команды"
+            if sum(self.dow) == 0:
+                embed.add_field(
+                    name="ℹ️",
+                    value="Данных пока нет — статистика копится с этого дня.",
+                    inline=False,
+                )
+            else:
+                labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+                maxd = max(self.dow)
+                lines = [
+                    f"{d} `{hbar(val, maxd)}` **{fmt_num(val)}**"
+                    for d, val in zip(labels, self.dow)
+                ]
+                embed.add_field(name="📆 По дням недели", value="\n".join(lines), inline=False)
+
+        for label, value in self.extra_fields:
+            embed.add_field(name=label, value=value, inline=True)
+        return embed
 
     @discord.ui.button(label="Недели", emoji="📅", style=discord.ButtonStyle.primary, row=0)
     async def btn_weekly(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -204,12 +141,10 @@ class StatsView(discord.ui.View):
         await self._refresh(interaction)
 
     async def _refresh(self, interaction: discord.Interaction):
-        img, embed = self.build()
-        buf = io.BytesIO()
-        img.save(buf, "PNG")
-        buf.seek(0)
+        embed = self.build()
         await interaction.response.edit_message(
-            embed=embed, view=self, attachments=[discord.File(buf, filename="stats.png")]
+            embed=embed, view=self,
+            allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False),
         )
 
 
@@ -274,7 +209,7 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             str(interaction.guild.id), str(interaction.user.id), today, "commands"
         )
 
-    @app_commands.command(name="stats", description="График активности за последние 8 недель")
+    @app_commands.command(name="stats", description="Статистика активности за 8 недель и по дням недели")
     @app_commands.describe(member="Участник (по умолчанию — вы)")
     async def stats(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
@@ -306,38 +241,30 @@ class WeeklyStats(VoiceTrackerMixin, commands.Cog):
             (guild_id, user_id))
         urow = await cursor.fetchone()
 
-        summary = [
-            ("💬 Сообщений (8 нед.)", str(sum(series["messages"]))),
-        ]
-        total_voice = sum(series["voice_minutes"])
-        summary.append(("🎙 Голос (8 нед.)",
-                        f"{total_voice} мин" if total_voice < 60 else f"≈{total_voice // 60} ч {total_voice % 60} мин"))
-        summary.append(("⌨️ Команд (8 нед.)", str(sum(series["commands"]))))
+        extra_fields = []
         if urow:
-            summary.append(("🏅 Сообщений всего", str(urow["total_messages"])))
+            extra_fields.append(("🏅 Сообщений всего", str(urow["total_messages"])))
             tm = urow["total_voice_minutes"]
-            summary.append(("⏱ В голосе всего", f"{tm // 60} ч {tm % 60} мин"))
-            summary.append(("⭐ Репутация", str(urow["reputation"])))
+            extra_fields.append(("⏱ В голосе всего", f"{tm // 60} ч {tm % 60} мин"))
+            extra_fields.append(("⭐ Репутация", str(urow["reputation"])))
 
         view = StatsView(
             keys=keys, series=series, dow=dow,
-            display_name=f"@{target.display_name}", mention=target.mention,
-            summary=summary, member_flag=bool(member),
+            mention=target.mention, extra_fields=extra_fields,
             avatar_url=target.display_avatar.url,
             guild_icon=interaction.guild.icon.url if interaction.guild.icon else None,
-            user_id=str(target.id),
+            user_id=str(target.id), member_flag=bool(member),
         )
-        img, embed = view.build()
-        buf = io.BytesIO()
-        img.save(buf, "PNG")
-        buf.seek(0)
-        await interaction.followup.send(embed=embed, view=view, file=discord.File(buf, filename="stats.png"))
+        embed = view.build()
+        await interaction.followup.send(
+            embed=embed, view=view,
+            allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False),
+        )
 
     @commands.command(name="stats")
     async def stats_prefix(self, ctx, member: discord.Member = None):
         from prefix_adapter import InteractionAdapter
         await self.stats.callback(self, InteractionAdapter(ctx), member)
-
 
 
 async def setup(bot):

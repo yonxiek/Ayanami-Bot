@@ -3444,12 +3444,15 @@ class SetupLevelsView(discord.ui.View):
                 continue
             if desc.count("\n") >= 9:
                 break
-            name = member.display_name
+            name = member.mention
             medal = medals.get(i + 1, f"**{i + 1}.**")
             desc += f"{medal} **{name}** — Ур. `{entry['level']}` (`{entry['exp']}` XP)\n"
         embed = discord.Embed(title="🏆 Топ-10 по уровню", description=desc, color=discord.Color(0xf1c40f))
         embed.set_footer(text="Ayanami System")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(
+            embed=embed, ephemeral=True,
+            allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     @discord.ui.button(label="➕ Роль за голос (мин)", emoji="🎙️", style=discord.ButtonStyle.blurple, row=4)
     async def btn_add_voice_role(self, interaction: discord.Interaction, button: discord.ui.Button):

@@ -563,13 +563,15 @@ class Shop(commands.Cog):
             lines.append(f"\n🎁 **Открыто кейсов:** {opened_cases}")
 
         embed = discord.Embed(
-            title=f"Инвентарь — {target.display_name}",
+            title=f"Инвентарь — {target.mention}",
             description="\n".join(lines) if items or cards or titles else f"{lines[0]}\n\nПусто, но это исправимо!",
             color=Colors.MAIN,
         )
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.set_footer(text="Ayanami System")
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(
+            embed=embed, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
 
     @commands.command(name="shop")

@@ -198,13 +198,15 @@ class Achievements(commands.Cog):
             lines = lines[:40]
 
         embed = discord.Embed(
-            title=f"🏅 Достижения — {target.display_name}",
+            title=f"🏅 Достижения — {target.mention}",
             description="\n".join(lines),
             color=Colors.MAIN,
         )
         embed.set_footer(text=f"Выполнено: {len(earned_ids)} из {total_all}")
         embed.set_thumbnail(url=target.display_avatar.url)
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(
+            embed=embed, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     @commands.command(name="achievements")
     async def achievements_prefix(self, ctx, member: discord.Member = None):

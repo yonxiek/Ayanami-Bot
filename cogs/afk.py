@@ -69,7 +69,7 @@ class Afk(commands.Cog):
                 continue
             embed = discord.Embed(
                 title="😴 В AFK",
-                description=f"**{user.display_name}** сейчас в AFK: **{afk['reason'] or '—'}**",
+                description=f"**{user.mention}** сейчас в AFK: **{afk['reason'] or '—'}**",
                 color=Colors.WARNING,
             )
             embed.set_footer(text=f"Ушёл {_format_since(afk.get('since'))}")

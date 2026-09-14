@@ -33,7 +33,9 @@ class TopView(discord.ui.View):
                     else discord.ButtonStyle.secondary
                 )
         embed = await self.cog._build_top_embed(interaction, tab)
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(
+            embed=embed, view=self, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     @discord.ui.button(label="Монетки", emoji="💰", style=discord.ButtonStyle.primary)
     async def coins_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -141,7 +143,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
                 member = interaction.guild.get_member(int(entry["user_id"]))
                 if not member:
                     continue
-                entries.append((member.display_name, f"Ур. **{entry['level']}** • `{entry['exp']}` XP"))
+                entries.append((member.mention, f"Ур. **{entry['level']}** • `{entry['exp']}` XP"))
                 if len(entries) >= 15:
                     break
             title = "Топ по уровню"
@@ -161,7 +163,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
                 member = interaction.guild.get_member(int(row["user_id"]))
                 if not member:
                     continue
-                entries.append((member.display_name, f"**{row['total_messages']:,}** сообщений"))
+                entries.append((member.mention, f"**{row['total_messages']:,}** сообщений"))
                 if len(entries) >= 15:
                     break
             title = "Топ по сообщениям"
@@ -181,7 +183,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
                 member = interaction.guild.get_member(int(row["user_id"]))
                 if not member:
                     continue
-                name = member.display_name
+                name = member.mention
                 mins = row["total_voice_minutes"]
                 time_text = f"{mins // 60}ч {mins % 60}м" if mins >= 60 else f"{mins}м"
                 entries.append((name, time_text))
@@ -198,7 +200,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
                 member = interaction.guild.get_member(int(entry["user_id"]))
                 if not member:
                     continue
-                entries.append((member.display_name, f"**{entry['balance']:,}** {AyanamiUI.E_RP}"))
+                entries.append((member.mention, f"**{entry['balance']:,}** {AyanamiUI.E_RP}"))
                 if len(entries) >= 15:
                     break
             title = "Топ по монеткам"
@@ -283,7 +285,7 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         booster_text = " ⚡ Бустер (+65% XP)" if is_booster else ""
 
         description = (
-            f"### {target.display_name}{title_text}\n"
+            f"### {target.mention}{title_text}\n"
             f"> 👤 Discord: {target.name}\n"
             f"> 🎮 Roblox: {roblox_nick}\n"
             f"> 📅 На сервере: <t:{int(target.joined_at.timestamp())}:R>\n\n"
@@ -301,13 +303,15 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         )
 
         embed = discord.Embed(
-            title=f"Профиль — {target.display_name}",
+            title=f"Профиль — {target.mention}",
             description=description,
             color=Colors.MAIN,
         )
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.set_footer(text="Ayanami System")
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(
+            embed=embed, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     @app_commands.command(name="top", description="Таблица лидеров")
     async def top(self, interaction: discord.Interaction):
@@ -316,7 +320,9 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         await interaction.response.defer()
         embed = await self._build_top_embed(interaction, "coins")
         view = TopView(self)
-        await interaction.followup.send(embed=embed, view=view)
+        await interaction.followup.send(
+            embed=embed, view=view, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     @app_commands.command(name="give", description="Выдать монетки")
     @app_commands.describe(amount="Сколько монет выдать", users="Участники через пробел (упоминания или ID)")
@@ -372,7 +378,9 @@ class Economy(VoiceTrackerMixin, commands.Cog):
         from prefix_adapter import InteractionAdapter
         interaction = InteractionAdapter(ctx)
         embed = await self._build_top_embed(interaction, tab)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=embed, allowed_mentions=discord.AllowedMentions(users=False, everyone=False, roles=False)
+        )
 
     @commands.command(name="give")
     @commands.has_permissions(administrator=True)

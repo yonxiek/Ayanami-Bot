@@ -510,7 +510,7 @@ class Moderation(commands.Cog):
                 warn_text += f"**ID: `{r[0]}`** | Модератор: <@{r[1]}>\n> {r[2]}\n\n"
             description = warn_text
 
-        embed = discord.Embed(title=f"### Нарушения: {target.name}", description=description, color=discord.Color(0x2b2d31))
+        embed = discord.Embed(title=f"### Нарушения: {target.mention}", description=description, color=discord.Color(0x2b2d31))
         embed.set_footer(text="Ayanami System")
 
         view = discord.ui.View()
@@ -651,7 +651,7 @@ class Moderation(commands.Cog):
                 strike_text += f"**ID: `{r['id']}`** | Выдал: <@{r['moderator_id']}>\n> {r['reason']}\n\n"
             description = strike_text
 
-        embed = discord.Embed(title=f"### Страйки: {target.name}", description=description, color=discord.Color(0x2b2d31))
+        embed = discord.Embed(title=f"### Страйки: {target.mention}", description=description, color=discord.Color(0x2b2d31))
         embed.set_footer(text="Ayanami System")
 
         view = discord.ui.View()
@@ -1200,7 +1200,7 @@ class Moderation(commands.Cog):
         if not lines:
             lines.append(f"### {member.name}\nУ участника нет варнов или заметок.")
 
-        embed = discord.Embed(title=f"История: {member.name}", description="\n".join(lines), color=discord.Color(0x2b2d31))
+        embed = discord.Embed(title=f"История: {member.mention}", description="\n".join(lines), color=discord.Color(0x2b2d31))
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text="Ayanami System")
         await interaction.followup.send(embed=embed, ephemeral=True)
