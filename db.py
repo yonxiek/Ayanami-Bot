@@ -380,7 +380,15 @@ class Database:
                 status TEXT DEFAULT 'open',
                 created_at TEXT,
                 completed_at TEXT
-            )'''
+            )''',
+            '''CREATE TABLE IF NOT EXISTS transfers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                from_user TEXT,
+                to_user TEXT,
+                amount INTEGER,
+                timestamp TEXT
+            )''',
         ]
         
         for table in tables:
@@ -476,6 +484,33 @@ class Database:
         cursor = await self.conn.execute('SELECT user_id, balance FROM users WHERE guild_id = ? ORDER BY balance DESC LIMIT ?', (guild_id, limit))
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+    async def transfer_coins(self, guild_id: str, from_user: str, to_user: str, amount: int) -> bool:
+        if amount <= 0 or from_user == to_user:
+            return False
+        await self.create_user(guild_id, from_user)
+        await self.create_user(guild_id, to_user)
+        cursor = await self.conn.execute(
+            'SELECT balance FROM users WHERE guild_id = ? AND user_id = ?', (guild_id, from_user))
+        row = await cursor.fetchone()
+        if not row or row['balance'] < amount:
+            return False
+        await self.conn.execute(
+            'UPDATE users SET balance = balance - ? WHERE guild_id = ? AND user_id = ?', (amount, guild_id, from_user))
+        await self.conn.execute(
+            'UPDATE users SET balance = balance + ? WHERE guild_id = ? AND user_id = ?', (amount, guild_id, to_user))
+        await self.conn.execute(
+            'INSERT INTO transfers (guild_id, from_user, to_user, amount, timestamp) VALUES (?, ?, ?, ?, ?)',
+            (guild_id, from_user, to_user, amount, datetime.now(timezone.utc).isoformat()))
+        await self.conn.commit()
+        return True
+
+    async def get_transfer_history(self, guild_id: str, user_id: str, limit: int = 10) -> list:
+        cursor = await self.conn.execute(
+            'SELECT from_user, to_user, amount, timestamp FROM transfers '
+            'WHERE guild_id = ? AND (from_user = ? OR to_user = ?) ORDER BY id DESC LIMIT ?',
+            (guild_id, user_id, user_id, limit))
+        return [dict(row) for row in await cursor.fetchall()]
 
     async def increment_mod_stat(self, guild_id: str, moderator_id: str, action_type: str, amount: int = 1):
         await self.conn.execute('''
@@ -801,7 +836,8 @@ class Database:
             'user_activities', 'daily_rewards', 'random_quest_pool', 'random_quest_config',
             'temporary_roles', 'xp_boosts', 'reminders', 'achievements', 'duel_stats',
             'weekly_stats', 'tickets', 'polls', 'clans', 'clan_members', 'collectible_cards',
-            'user_cards', 'ai_moderation_log', 'server_events', 'cases', 'case_items'
+            'user_cards', 'ai_moderation_log', 'server_events', 'cases', 'case_items',
+            'transfers'
         ]
         for table in guild_tables:
             await self.conn.execute(f'DELETE FROM {table} WHERE guild_id = ?', (guild_id,))

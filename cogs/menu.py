@@ -18,6 +18,7 @@ COLORS = {
     "Напоминания": 0xf1c40f,
     "Дни рождения": 0xf06292,
     "Задачи": 0x1abc9c,
+    "Кошелёк": 0xf39c12,
 }
 
 
@@ -443,6 +444,37 @@ class TaskIdModal(discord.ui.Modal, title="📋 ID задачи"):
             await cog.task_delete(interaction, task_id)
 
 
+class TransferModal(discord.ui.Modal, title="💸 Перевод монет"):
+    recipient = discord.ui.TextInput(
+        label="Получатель (ID или упоминание)", placeholder="123456789012345678", max_length=20
+    )
+    amount = discord.ui.TextInput(
+        label="Сумма", placeholder="100", max_length=10
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        db = Database()
+        guild_id = str(interaction.guild.id)
+        from_user = str(interaction.user.id)
+        to_user_id = _extract_id(self.recipient.value)
+        if not to_user_id:
+            return await interaction.response.send_message("❌ Укажите ID или упоминание получателя.", ephemeral=True)
+        if to_user_id == interaction.user.id:
+            return await interaction.response.send_message("❌ Нельзя перевести монеты самому себе.", ephemeral=True)
+        try:
+            amount_val = int(self.amount.value)
+        except ValueError:
+            return await interaction.response.send_message("❌ Сумма должна быть числом.", ephemeral=True)
+        if amount_val <= 0:
+            return await interaction.response.send_message("❌ Сумма должна быть больше нуля.", ephemeral=True)
+        success = await db.transfer_coins(guild_id, from_user, str(to_user_id), amount_val)
+        if not success:
+            return await interaction.response.send_message("❌ Недостаточно монет или получатель не найден.", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ Переведено **{amount_val}** монет <@{to_user_id}>.", ephemeral=True
+        )
+
+
 # ─────────────────────────────────────────────
 #  View-ы
 # ─────────────────────────────────────────────
@@ -486,6 +518,11 @@ class MenuView(discord.ui.View):
                 description="Личные задачи и цели",
                 emoji="📋",
             ),
+            discord.SelectOption(
+                label="Кошелёк",
+                description="Переводы монет и история операций",
+                emoji="💰",
+            ),
         ],
     )
     async def select_callback(
@@ -501,6 +538,7 @@ class MenuView(discord.ui.View):
             "Напоминания": "Создавайте личные напоминания и управляйте ими.",
             "Дни рождения": "Сохрани дату рождения — в праздник Ayanami поздравит и выдаст роль.",
             "Задачи": "Веди личные задачи: создавай, отмечай выполненное и удаляй.",
+            "Кошелёк": "Переводите монеты другим участникам и просматривайте историю переводов.",
         }[category]
         embed = discord.Embed(title=category, description=desc, color=COLORS[category])
         embed.set_footer(text="Выберите действие ниже")
@@ -548,6 +586,9 @@ class CategoryView(discord.ui.View):
             self._add_btn("Мои задачи", "📋", discord.ButtonStyle.secondary, self._task_list)
             self._add_btn("Завершить", "✅", discord.ButtonStyle.primary, self._task_complete)
             self._add_btn("Удалить", "❌", discord.ButtonStyle.danger, self._task_delete)
+        elif category == "Кошелёк":
+            self._add_btn("Перевод", "💸", discord.ButtonStyle.success, self._wallet_transfer)
+            self._add_btn("История", "📋", discord.ButtonStyle.secondary, self._wallet_history)
 
         back = discord.ui.Button(
             label="Назад", emoji="◀️", style=discord.ButtonStyle.grey, row=4
@@ -744,6 +785,29 @@ class CategoryView(discord.ui.View):
 
     async def _task_delete(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TaskIdModal("delete"))
+
+    # ── Wallet ──
+    async def _wallet_transfer(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TransferModal())
+
+    async def _wallet_history(self, interaction: discord.Interaction):
+        db = Database()
+        history = await db.get_transfer_history(str(interaction.guild.id), str(interaction.user.id))
+        if not history:
+            return await interaction.response.send_message("📋 У вас пока нет переводов.", ephemeral=True)
+        lines = []
+        uid = str(interaction.user.id)
+        for h in history:
+            if h["from_user"] == uid:
+                lines.append(f"→ <@{h['to_user']}> **-** `{h['amount']}` 📤")
+            else:
+                lines.append(f"← <@{h['from_user']}> **+** `{h['amount']}` 📥")
+        embed = discord.Embed(
+            title="📋 История переводов",
+            description="\n".join(lines),
+            color=0xf39c12,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class Menu(commands.Cog):
