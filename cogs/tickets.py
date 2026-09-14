@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 import discord
@@ -59,6 +60,103 @@ class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
+
+    async def cog_load(self):
+        try:
+            self._bg_task = self.bot.loop.create_task(self._auto_close_loop())
+        except (RuntimeError, AttributeError):
+            pass
+
+    async def cog_unload(self):
+        if hasattr(self, "_bg_task"):
+            self._bg_task.cancel()
+
+    async def _auto_close_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                await self._auto_close_inactive()
+            except Exception as e:
+                print(f"Ошибка авто-закрытия тикетов: {e}")
+            await asyncio.sleep(1800)
+
+    async def _auto_close_inactive(self):
+        cursor = await self.db.conn.execute(
+            "SELECT guild_id, ticket_number, channel_id, user_id, category_name FROM tickets WHERE status = 'open'")
+        rows = await cursor.fetchall()
+        for row in rows:
+            guild = self.bot.get_guild(int(row["guild_id"]))
+            if not guild:
+                continue
+            config = await self.db.get_guild_config(str(guild.id))
+            hours = config.get("ticket_auto_close_hours", 0) or 0
+            if hours <= 0:
+                continue
+            channel = guild.get_channel(int(row["channel_id"]))
+            if not channel:
+                continue
+            try:
+                last = [m async for m in channel.history(limit=1)]
+                if not last:
+                    continue
+                elapsed = (datetime.now(timezone.utc) - last[0].created_at.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+                if elapsed >= hours:
+                    await self._auto_close_ticket(guild, row["ticket_number"], row["user_id"], row["category_name"])
+            except Exception:
+                continue
+
+    async def _auto_close_ticket(self, guild: discord.Guild, ticket_number: int, owner_id: str, cat_name: str):
+        config = await self.db.get_guild_config(str(guild.id))
+        cursor = await self.db.conn.execute(
+            "SELECT channel_id FROM tickets WHERE guild_id = ? AND ticket_number = ? AND status = 'open'",
+            (str(guild.id), ticket_number))
+        row = await cursor.fetchone()
+        if not row:
+            return
+        await self.db.conn.execute(
+            "UPDATE tickets SET status = 'closed', closed_at = ? WHERE guild_id = ? AND ticket_number = ?",
+            (datetime.now(timezone.utc).isoformat(), str(guild.id), ticket_number))
+        await self.db.conn.commit()
+
+        channel = guild.get_channel(int(row["channel_id"]))
+        messages_text = ""
+        if channel:
+            try:
+                async for msg in channel.history(limit=200, oldest_first=True):
+                    if msg.author.bot:
+                        continue
+                    time_str = msg.created_at.strftime("%d.%m %H:%M")
+                    messages_text += f"[{time_str}] {msg.author.name}: {msg.content[:200]}\n"
+            except Exception:
+                pass
+
+        embed = discord.Embed(
+            title=f"🔒 Тикет #{ticket_number} закрыт автоматически",
+            description=f"**Категория:** {cat_name}\n**Закрыт:** за неактивность",
+            color=Colors.WARNING,
+            timestamp=datetime.now(timezone.utc),
+        )
+        if messages_text:
+            embed.add_field(name="История сообщений", value=messages_text[:1024] or "Пусто", inline=False)
+
+        log_channel_id = config.get("ticket_log_channel_id")
+        if log_channel_id:
+            log_channel = guild.get_channel(int(log_channel_id))
+            if log_channel:
+                await log_channel.send(embed=embed)
+
+        member = guild.get_member(int(owner_id))
+        if member:
+            try:
+                await member.send(
+                    f"🔒 Ваш тикет **#{ticket_number}** на сервере **{guild.name}** был закрыт автоматически "
+                    f"за неактивность.\nЕсли вопрос не решён — откройте новый тикет.")
+            except Exception:
+                pass
+
+        if channel:
+            await channel.delete(reason=f"Тикет #{ticket_number} закрыт автоматически")
+        await self._log_ticket("closed", guild, member, ticket_number, cat_name)
 
     # ==========================================================
     #                    ЛОГИКА РАССЫЛКИ ПАНЕЛИ
@@ -272,9 +370,10 @@ class Tickets(commands.Cog):
         emoji = "📩" if action == "created" else "🔒"
         text = "Создан" if action == "created" else "Закрыт"
 
+        user_line = user.mention if user else "Автоматически"
         embed = discord.Embed(
             title=f"{emoji} Тикет #{ticket_number} {text}",
-            description=f"**Пользователь:** {user.mention}\n**Категория:** {category}",
+            description=f"**Пользователь:** {user_line}\n**Категория:** {category}",
             color=color,
             timestamp=datetime.now(timezone.utc),
         )

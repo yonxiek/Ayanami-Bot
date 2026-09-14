@@ -3577,17 +3577,23 @@ class SetupTicketsView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         await cog._send_panel(interaction)
 
+    @discord.ui.button(label="Авто-закрытие", emoji="⏱️", style=discord.ButtonStyle.blurple, row=3)
+    async def btn_autoclose(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TicketAutoCloseModal())
+
     @discord.ui.button(label="Текущие настройки", emoji="📋", style=discord.ButtonStyle.grey, row=3)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = await self.db.get_guild_config(str(self.guild_id))
         log_ch = config.get("ticket_log_channel_id")
         support_role = config.get("ticket_support_role_id")
         categories = config.get("ticket_categories", [])
+        auto_close = config.get("ticket_auto_close_hours", 0) or 0
         lines = [
             "### Тикеты",
             f"**Канал логов:** {f'<#{log_ch}>' if log_ch else '❌ Не настроен'}",
             f"**Роль поддержки:** {f'<@&{support_role}>' if support_role else '❌ Не настроена'}",
             f"**Категорий:** {len(categories)}",
+            f"**Авто-закрытие:** {'Выключено' if auto_close == 0 else f'через {auto_close} ч без ответа'}",
             "",
             "**Как настроить:**",
             "1. «Добавить категорию» — указать название и ID Discord-категории",
@@ -4031,6 +4037,30 @@ class TicketCategoryModal(discord.ui.Modal, title="Категория тикет
             self.description.value or "",
             cat_id,
         )
+
+
+class TicketAutoCloseModal(discord.ui.Modal, title="⏱️ Авто-закрытие тикетов"):
+    hours = discord.ui.TextInput(
+        label="Часов без ответа (0 — выключить)", placeholder="48", max_length=5
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        db = Database()
+        try:
+            value = int(self.hours.value)
+        except ValueError:
+            return await interaction.response.send_message("❌ Укажите число часов.", ephemeral=True)
+        if value < 0:
+            return await interaction.response.send_message("❌ Часов не может быть меньше 0.", ephemeral=True)
+        await db.update_config_field(str(interaction.guild.id), "ticket_auto_close_hours", value)
+        await log_settings_change(
+            interaction, "Тикеты",
+            f"**Действие:** авто-закрытие тикетов\n**Таймаут:** {value} ч"
+        )
+        msg = f"✅ Авто-закрытие: тикеты будут закрываться после **{value} ч** без ответа."
+        if value == 0:
+            msg = "✅ Авто-закрытие тикетов выключено."
+        await interaction.response.send_message(msg, ephemeral=True)
 
 
 class CardAddModal(discord.ui.Modal, title="🃏 Новая карточка"):
